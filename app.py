@@ -309,7 +309,7 @@ with c2:
             novo["_pdfs_bytes"] = d.get("_pdfs_bytes", {})
             novo["_logo_bytes"] = d.get("_logo_bytes")
             # Limpa TODOS os estados de widgets para forçar re-render com novos valores
-            keys_preservar = {"dados", "sv", "import_json"}
+            keys_preservar = {"dados", "sv"}  # NÃO preservar import_json evita loop infinito de re-importação
             for k in list(st.session_state.keys()):
                 if k not in keys_preservar:
                     del st.session_state[k]
