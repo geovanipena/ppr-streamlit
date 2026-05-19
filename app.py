@@ -3,7 +3,7 @@ PPR Web – Gerador de Plano de Proteção Radiológica
 Versão Streamlit  |  Física Médica / Radioterapia
 """
 import streamlit as st
-import json, io, base64, tempfile, os
+import json, io, base64, tempfile, os, hashlib
 from copy import deepcopy
 import pandas as pd
 
@@ -205,10 +205,72 @@ def importar_jsons(arquivos) -> dict:
 if "dados" not in st.session_state:
     st.session_state.dados = dados_padrao()
 if "sv" not in st.session_state:
-    st.session_state.sv = 0  # session version — força refresh dos widgets ao importar
+    st.session_state.sv = 0
+if "hash_salvo" not in st.session_state:
+    st.session_state.hash_salvo = ""   # hash dos dados na última exportação
 
 d = st.session_state.dados
-sv = st.session_state.sv  # usado nas keys dos widgets
+sv = st.session_state.sv
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FUNÇÕES DE PROGRESSO E VALIDAÇÃO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _hash_dados(dados: dict) -> str:
+    """Hash MD5 dos dados (sem bytes binários) para detectar mudanças."""
+    exportar = {k: v for k, v in dados.items() if not k.startswith("_")}
+    return hashlib.md5(json.dumps(exportar, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
+def calcular_progresso(dados: dict) -> tuple:
+    """
+    Retorna (pct: int, itens: list[dict]) onde cada item tem
+    {label, ok, critico} para montar o checklist.
+    """
+    inst = dados.get("instalacao", {})
+    itens = [
+        # ── Identificação ──────────────────────────────────────────────
+        {"label": "Nome da instalação",         "ok": bool(inst.get("nome")),           "critico": True},
+        {"label": "Matrícula CNEN",             "ok": bool(inst.get("matricula_cnen")), "critico": True},
+        {"label": "CNPJ",                       "ok": bool(inst.get("cnpj")),           "critico": True},
+        {"label": "Endereço completo",          "ok": all(inst.get(k) for k in ["rua","cidade","uf","cep"]), "critico": False},
+        {"label": "Grupo/Subgrupo CNEN",        "ok": bool(inst.get("grupo")),          "critico": True},
+        {"label": "Objetivo da instalação",     "ok": bool(inst.get("objetivo")),       "critico": False},
+        # ── Responsáveis ───────────────────────────────────────────────
+        {"label": "Titular(es) cadastrado(s)",  "ok": len(dados.get("responsaveis",[])) > 0, "critico": True},
+        {"label": "SPR (nome + RT + RA)",       "ok": all(dados.get("supervisor",{}).get(k) for k in ["nome","rt","ra"]), "critico": True},
+        {"label": "Substituto do SPR",          "ok": bool(dados.get("substituto_supervisor",{}).get("nome")), "critico": True},
+        {"label": "Responsável Técnico",        "ok": all(dados.get("responsavel_tecnico",{}).get(k) for k in ["nome","crm"]), "critico": True},
+        {"label": "Substituto do RT",           "ok": bool(dados.get("substituto_rt",{}).get("nome")), "critico": False},
+        # ── Equipes ────────────────────────────────────────────────────
+        {"label": "Médicos cadastrados",        "ok": len(dados.get("equipes_medicos",[])) > 0,   "critico": True},
+        {"label": "Físicos médicos",            "ok": len(dados.get("equipes_fisicos",[])) > 0,   "critico": True},
+        {"label": "Técnicos em RT",             "ok": len(dados.get("equipes_tecnicos",[])) > 0,  "critico": False},
+        # ── Equipamentos ───────────────────────────────────────────────
+        {"label": "Equipamentos/Fontes",        "ok": len(dados.get("equipamentos",[])) > 0,      "critico": True},
+        {"label": "Conjuntos dosimétricos",     "ok": len(dados.get("conjunto_dosimetrico",[])) > 0, "critico": True},
+        {"label": "Monitores de área",          "ok": len(dados.get("monitores_area",[])) > 0,    "critico": False},
+        # ── Garantia da Qualidade ──────────────────────────────────────
+        {"label": "Testes diários definidos",   "ok": len(dados.get("testes_diarios",[])) > 0,    "critico": True},
+        {"label": "Testes mensais definidos",   "ok": len(dados.get("testes_mensais",[])) > 0,    "critico": True},
+        {"label": "Testes anuais definidos",    "ok": len(dados.get("testes_anuais",[])) > 0,     "critico": True},
+        {"label": "Sistemas de planejamento",   "ok": len(dados.get("sistemas_planejamento",[])) > 0, "critico": False},
+        # ── Textos ─────────────────────────────────────────────────────
+        {"label": "Texto: Classificação de áreas",     "ok": bool(dados.get("textos_caps",{}).get("classificacao_areas")),    "critico": True},
+        {"label": "Texto: Monitoração individual",     "ok": bool(dados.get("textos_caps",{}).get("monitoracao_individual")), "critico": True},
+        {"label": "Texto: Procedimentos de emergência","ok": bool(dados.get("textos_caps",{}).get("procedimentos_emergencia")),"critico": True},
+        {"label": "Texto: Gerência de rejeitos",       "ok": bool(dados.get("textos_caps",{}).get("gerencia_rejeitos")),     "critico": False},
+        {"label": "Texto: Cálculo de barreiras",       "ok": bool(dados.get("textos_caps",{}).get("calculo_barreiras")),    "critico": False},
+    ]
+    total = len(itens)
+    ok_count = sum(1 for i in itens if i["ok"])
+    return int(ok_count / total * 100), itens
+
+
+def erros_criticos(itens: list) -> list:
+    """Retorna itens críticos não preenchidos."""
+    return [i for i in itens if i["critico"] and not i["ok"]]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -284,6 +346,13 @@ def upload_pdfs(chave_pdfs: str, label: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 #  HEADER
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# Calcula progresso e detecta mudanças não salvas
+pct_prog, itens_prog = calcular_progresso(d)
+hash_atual = _hash_dados(d)
+dados_modificados = (hash_atual != st.session_state.hash_salvo) and bool(d["instalacao"].get("nome"))
+
+# Linha 1: título + importar + exportar + novo
 c1, c2, c3, c4 = st.columns([4, 2, 2, 2])
 with c1:
     st.title("☢️ Gerador de PPR")
@@ -297,24 +366,20 @@ with c2:
         accept_multiple_files=True,
         label_visibility="collapsed",
         key="import_json",
-        help=(
-            "Selecione 1 arquivo unificado (novo formato) OU varios arquivos "
-            "separados: instalacao.json, pessoal.json, equipamentos.json, "
-            "qualidade.json, textos.json, pdfs.json, imagens.json"
-        ),
+        help="Selecione 1 arquivo unificado (novo) OU 7 arquivos separados do formato antigo.",
     )
     if arqs_imp:
         try:
             novo = importar_jsons(arqs_imp)
             novo["_pdfs_bytes"] = d.get("_pdfs_bytes", {})
             novo["_logo_bytes"] = d.get("_logo_bytes")
-            # Limpa TODOS os estados de widgets para forçar re-render com novos valores
-            keys_preservar = {"dados", "sv"}  # NÃO preservar import_json evita loop infinito de re-importação
+            keys_preservar = {"dados", "sv", "hash_salvo"}
             for k in list(st.session_state.keys()):
                 if k not in keys_preservar:
                     del st.session_state[k]
             st.session_state.dados = novo
-            st.session_state.sv += 1  # incrementa versão → novas keys → widgets zerados
+            st.session_state.sv += 1
+            st.session_state.hash_salvo = _hash_dados(novo)  # importado = "salvo"
             nomes = ", ".join(a.name for a in arqs_imp)
             st.success(f"✅ Importado: {nomes}")
             st.rerun()
@@ -322,16 +387,18 @@ with c2:
             st.error(f"Erro ao importar: {e}")
 
 with c3:
-    # Exportar projeto completo (sem bytes de PDFs para manter pequeno)
     exportar = deepcopy(d)
     exportar.pop("_pdfs_bytes", None)
     exportar.pop("_logo_bytes", None)
     json_str = json.dumps(exportar, ensure_ascii=False, indent=2)
     nome_arq = (d["instalacao"].get("nome") or "PPR")[:25].replace(" ", "_")
-    st.download_button("💾 Exportar .json",
-                       data=json_str.encode("utf-8"),
-                       file_name=f"PPR_{nome_arq}.json",
-                       mime="application/json")
+    if st.download_button(
+        "💾 Exportar .json",
+        data=json_str.encode("utf-8"),
+        file_name=f"PPR_{nome_arq}.json",
+        mime="application/json",
+    ):
+        st.session_state.hash_salvo = hash_atual  # marca como salvo
 
 with c4:
     if st.button("🆕 Novo Projeto", type="secondary"):
@@ -341,7 +408,34 @@ with c4:
                 del st.session_state[k]
         st.session_state.dados = dados_padrao()
         st.session_state.sv += 1
+        st.session_state.hash_salvo = ""
         st.rerun()
+
+# ── Barra de progresso + alerta de não salvo ──────────────────────────────
+col_prog, col_aviso = st.columns([3, 2])
+with col_prog:
+    cor = "#1E8449" if pct_prog >= 80 else "#E67E22" if pct_prog >= 50 else "#C0392B"
+    st.markdown(
+        f"""
+        <div style="margin:4px 0 2px 0; font-size:.85rem; color:#555;">
+            Preenchimento do PPR: <b style="color:{cor}">{pct_prog}%</b>
+        </div>
+        <div style="background:#eee; border-radius:8px; height:10px; overflow:hidden;">
+            <div style="width:{pct_prog}%; background:{cor}; height:100%; 
+                        border-radius:8px; transition:width .4s;"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col_aviso:
+    if dados_modificados:
+        st.markdown(
+            """<div style="background:#FFF3CD; border:1px solid #FFC107; border-radius:6px;
+                padding:6px 12px; font-size:.85rem; color:#856404; text-align:center;">
+                ⚠️ <b>Dados não salvos</b> — Exporte o JSON para não perder!</div>""",
+            unsafe_allow_html=True,
+        )
 
 st.divider()
 
@@ -659,55 +753,97 @@ with tabs[5]:
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[6]:
     st.subheader("📑 Geração do Plano de Proteção Radiológica")
-
-    # Pré-visualização resumida
     inst_v = d["instalacao"]
-    with st.expander("👁️ Pré-visualização dos dados principais", expanded=True):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.write("**Instalação**")
-            st.write(inst_v.get("nome","—"))
-            st.write(f"CNEN: {inst_v.get('matricula_cnen','—')}")
-            st.write(f"{inst_v.get('cidade','')}/{inst_v.get('uf','')}")
-        with c2:
-            st.write("**Equipes**")
-            st.write(f"Médicos: {len(d.get('equipes_medicos',[]))}")
-            st.write(f"Físicos: {len(d.get('equipes_fisicos',[]))}")
-            st.write(f"Técnicos: {len(d.get('equipes_tecnicos',[]))}")
-            st.write(f"Enfermagem: {len(d.get('equipes_enfermagem',[]))}")
-        with c3:
-            st.write("**Equipamentos**")
-            st.write(f"Fontes: {len(d.get('equipamentos',[]))}")
-            st.write(f"Conj. Dosimétricos: {len(d.get('conjunto_dosimetrico',[]))}")
-            st.write(f"PDFs anexados: {len(d.get('_pdfs_bytes',{}))}")
 
-    st.divider()
-    st.write("Clique em **Gerar PDF** para compilar o PPR completo.")
+    # ── Checklist de validação ────────────────────────────────────────────────
+    pct, itens = calcular_progresso(d)
+    criticos_faltando = erros_criticos(itens)
 
-    if st.button("📑 Gerar PDF", type="primary", width='stretch'):
-        with st.spinner("Compilando o PPR..."):
-            try:
-                from ppr_pdf_web import gerar_pdf_bytes
-                pdf_bytes = gerar_pdf_bytes(d)
-                nome_pdf = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
-                st.success("✅ PDF gerado com sucesso!")
-                st.download_button(
-                    label="⬇️ Baixar PPR.pdf",
-                    data=pdf_bytes,
-                    file_name=f"PPR_{nome_pdf}.pdf",
-                    mime="application/pdf",
-                    width='stretch',
-                )
-            except ImportError:
-                st.error("❌ Módulo ppr_pdf_web não encontrado. "
-                         "Verifique se o arquivo ppr_pdf_web.py está na mesma pasta.")
-            except Exception as e:
-                st.error(f"❌ Erro ao gerar PDF: {e}")
-                st.exception(e)
+    col_check, col_gerar = st.columns([3, 2])
 
-    st.divider()
-    st.caption(
-        "**Obs.:** Os PDFs externos (SEVRRA, auditoria, blindagem etc.) enviados "
-        "na aba 'Arquivos PDFs' serão incorporados ao documento. "
-        "Arquivos pesados (>5 MB cada) podem aumentar o tempo de geração."
-    )
+    with col_check:
+        sec("✅ Checklist de Completude")
+
+        # Agrupa por categoria
+        grupos = [
+            ("🏥 Identificação",      itens[0:6]),
+            ("👤 Responsáveis",       itens[6:11]),
+            ("👥 Equipes",            itens[11:14]),
+            ("⚙️ Equipamentos",       itens[14:17]),
+            ("✅ Garantia Qualidade", itens[17:21]),
+            ("📝 Textos",             itens[21:]),
+        ]
+        for titulo_grp, grupo in grupos:
+            ok_grp = sum(1 for i in grupo if i["ok"])
+            total_grp = len(grupo)
+            cor_grp = "🟢" if ok_grp == total_grp else "🟡" if ok_grp > 0 else "🔴"
+            with st.expander(f"{cor_grp} {titulo_grp} — {ok_grp}/{total_grp}", expanded=(ok_grp < total_grp)):
+                for item in grupo:
+                    icon = "✅" if item["ok"] else ("❌" if item["critico"] else "⚠️")
+                    sufixo = " *(obrigatório)*" if item["critico"] and not item["ok"] else ""
+                    st.markdown(f"{icon} {item['label']}{sufixo}")
+
+    with col_gerar:
+        sec("📊 Resumo")
+        st.metric("Preenchimento", f"{pct}%")
+
+        c1g, c2g = st.columns(2)
+        c1g.metric("✅ OK", sum(1 for i in itens if i["ok"]))
+        c2g.metric("❌ Faltando", len(itens) - sum(1 for i in itens if i["ok"]))
+
+        if criticos_faltando:
+            faltando_txt = "\n".join(f"- {i['label']}" for i in criticos_faltando)
+            st.error(f"{len(criticos_faltando)} campo(s) obrigatório(s) faltando:\n{faltando_txt}")
+        else:
+            st.success("Todos os campos obrigatórios preenchidos! O PPR pode ser gerado.")
+
+
+
+
+
+        st.divider()
+
+        # Resumo rápido
+        st.markdown("**Resumo do projeto:**")
+        st.write(f"🏥 {inst_v.get('nome','—')}")
+        st.write(f"📋 CNEN: {inst_v.get('matricula_cnen','—')}")
+        st.write(f"📍 {inst_v.get('cidade','—')}/{inst_v.get('uf','—')}")
+        st.write(f"👥 {len(d.get('equipes_medicos',[]))} médicos · "
+                 f"{len(d.get('equipes_fisicos',[]))} físicos")
+        st.write(f"⚙️ {len(d.get('equipamentos',[]))} equipamentos")
+        st.write(f"📎 {len(d.get('_pdfs_bytes',{}))} PDFs anexados")
+
+        st.divider()
+
+        # Botão de geração — bloqueado se críticos faltando
+        if criticos_faltando:
+            st.warning("Complete os campos obrigatórios (❌) antes de gerar o PDF.")
+            gerar_disabled = True
+        else:
+            gerar_disabled = False
+
+        if st.button("📑 Gerar PDF", type="primary", width="stretch",
+                     disabled=gerar_disabled):
+            with st.spinner("Compilando o PPR... isso pode levar alguns segundos."):
+                try:
+                    from ppr_pdf_web import gerar_pdf_bytes
+                    pdf_bytes = gerar_pdf_bytes(d)
+                    nome_pdf = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
+                    st.success("✅ PDF gerado com sucesso!")
+                    st.download_button(
+                        label="⬇️ Baixar PPR.pdf",
+                        data=pdf_bytes,
+                        file_name=f"PPR_{nome_pdf}.pdf",
+                        mime="application/pdf",
+                        width="stretch",
+                    )
+                except ImportError:
+                    st.error("❌ Módulo ppr_pdf_web não encontrado.")
+                except Exception as e:
+                    st.error(f"❌ Erro ao gerar PDF: {e}")
+                    st.exception(e)
+
+        st.caption(
+            "Os PDFs enviados na aba 'Arquivos PDFs' (SEVRRA, blindagem, auditoria etc.) "
+            "serão incorporados automaticamente ao documento final."
+        )
