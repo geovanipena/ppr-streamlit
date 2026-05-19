@@ -669,25 +669,29 @@ with tabs[3]:
 with tabs[4]:
     tc = d.get("textos_caps", {})
     textos_conf = [
-        ("classificacao_areas",   "Classificação de Áreas"),
-        ("controle_acesso",       "Mecanismos de Controle de Acesso"),
-        ("monitoracao_individual","Monitoração Individual"),
-        ("monitoracao_areas",     "Monitoração de Áreas"),
-        ("controle_medico",       "Controle Médico dos IOEs"),
-        ("niveis_operacionais",   "Níveis Operacionais e Restrições"),
+        ("classificacao_areas",    "Classificação de Áreas"),
+        ("controle_acesso",        "Mecanismos de Controle de Acesso"),
+        ("monitoracao_individual", "Monitoração Individual"),
+        ("monitoracao_areas",      "Monitoração de Áreas"),
+        ("controle_medico",        "Controle Médico dos IOEs"),
+        ("niveis_operacionais",    "Níveis Operacionais e Restrições"),
         ("procedimentos_emergencia","Procedimentos de Emergência"),
-        ("programa_treinamento",  "Programa de Treinamento em PR"),
-        ("programa_educacao",     "Programa de Educação Continuada"),
-        ("gerencia_rejeitos",     "Gerência de Rejeitos Radioativos"),
-        ("calculo_barreiras",     "Cálculo de Barreiras"),
-        ("matriz_risco",          "Matriz de Risco"),
-        ("auditoria_externa",     "Auditoria Externa"),
+        ("programa_treinamento",   "Programa de Treinamento em PR"),
+        ("programa_educacao",      "Programa de Educação Continuada"),
+        ("gerencia_rejeitos",      "Gerência de Rejeitos Radioativos"),
+        ("calculo_barreiras",      "Cálculo de Barreiras"),
+        ("matriz_risco",           "Matriz de Risco"),
+        ("auditoria_externa",      "Auditoria Externa"),
     ]
+    st.caption("💡 Textos importados do projeto aparecem pré-preenchidos. Edite conforme necessário.")
     for chave, label in textos_conf:
-        with st.expander(f"📄 {label}", expanded=False):
+        preenchido = bool(tc.get(chave, "").strip())
+        icone = "✅" if preenchido else "📄"
+        with st.expander(f"{icone} {label}", expanded=not preenchido):
             tc[chave] = st.text_area(
                 label, tc.get(chave, ""), height=200,
-                key=f"tc_{chave}", label_visibility="collapsed"
+                key=f"tc_{chave}_{sv}",   # ← sv garante refresh após import
+                label_visibility="collapsed"
             )
     d["textos_caps"] = tc
 
@@ -696,30 +700,79 @@ with tabs[4]:
 #  TAB 6 – ARQUIVOS PDFs
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[5]:
-    st.info("📎 Faça upload dos PDFs que serão incorporados ao documento final. "
-            "Eles ficam armazenados na sessão e são incluídos na geração do PDF.")
+    pdfs_importados = d.get("pdfs", {})
+    pdfs_bytes_map  = d.get("_pdfs_bytes", {})
+
+    # Conta arquivos por status
+    total_vinculados = sum(len(v) for v in pdfs_importados.values() if isinstance(v, list))
+    total_uploaded   = len(pdfs_bytes_map)
+
+    col_info1, col_info2, col_info3 = st.columns(3)
+    col_info1.metric("📋 Caminhos vinculados", total_vinculados,
+                     help="Arquivos referenciados no projeto original (caminhos locais)")
+    col_info2.metric("⬆️ PDFs carregados", total_uploaded,
+                     help="Arquivos efetivamente enviados nesta sessão e prontos para o PDF")
+    col_info3.metric("⚠️ Pendentes de upload",
+                     max(0, total_vinculados - total_uploaded),
+                     help="Arquivos vinculados que ainda precisam ser enviados")
+
+    st.info(
+        "📎 **Como funciona:** O projeto original vinculava PDFs por caminho local (G:/...). "
+        "Na versão web, você precisa **fazer upload** de cada arquivo. "
+        "Os arquivos carregados ✅ serão incorporados ao PPR gerado."
+    )
+    st.divider()
 
     secoes_pdf = [
-        ("autorizacao_funcionamento",    "Autorização de Funcionamento (CNEN)"),
-        ("calculo_blindagem",            "Cálculo de Blindagem"),
-        ("levantamento_radiometrico",    "Levantamento Radiométrico"),
-        ("classificacao_areas",          "Classificação de Áreas"),
-        ("sevrra",                       "SEVRRA"),
-        ("auditoria",                    "Auditoria Dosimétrica"),
+        ("autorizacao_funcionamento",         "Autorização de Funcionamento (CNEN)"),
+        ("calculo_blindagem",                 "Cálculo de Blindagem"),
+        ("levantamento_radiometrico",         "Levantamento Radiométrico"),
+        ("classificacao_areas",               "Classificação de Áreas"),
+        ("sevrra",                            "SEVRRA"),
+        ("auditoria",                         "Auditoria Dosimétrica"),
         ("certificados_conjunto_dosimetrico", "Certificados – Conjuntos Dosimétricos"),
-        ("certificados_monitores_area",  "Certificados – Monitores de Área"),
-        ("certificados_outros",          "Certificados – Outros"),
-        ("contrato_monitoracao",         "Contrato de Monitoração Individual"),
-        ("procedimentos_emergencia",     "Procedimentos de Emergência"),
-        ("gerencia_rejeitos",            "Gerência de Rejeitos"),
+        ("certificados_monitores_area",       "Certificados – Monitores de Área"),
+        ("certificados_outros",               "Certificados – Outros"),
+        ("contrato_monitoracao",              "Contrato de Monitoração Individual"),
+        ("procedimentos_emergencia",          "Procedimentos de Emergência"),
+        ("gerencia_rejeitos",                 "Gerência de Rejeitos"),
     ]
 
     c1, c2 = st.columns(2)
     for i, (chave, label) in enumerate(secoes_pdf):
         col = c1 if i % 2 == 0 else c2
         with col:
-            with st.expander(f"📁 {label}", expanded=False):
-                upload_pdfs(chave, f"PDF(s) – {label}")
+            # Verifica status desta seção
+            paths_vinculados = pdfs_importados.get(chave, [])
+            paths_vinculados = [p for p in paths_vinculados if p]  # remove vazios
+            uploaded_nesta_secao = [
+                v["nome"] for v in pdfs_bytes_map.values()
+                if v.get("chave_secao") == chave
+            ]
+            n_vinc = len(paths_vinculados)
+            n_up   = len(uploaded_nesta_secao)
+
+            if n_up > 0:
+                icone = "✅"
+            elif n_vinc > 0:
+                icone = "⚠️"
+            else:
+                icone = "📁"
+
+            status_txt = f"{n_up} carregado(s)" if n_up > 0 else (
+                f"{n_vinc} vinculado(s) — upload pendente" if n_vinc > 0 else "vazio"
+            )
+
+            with st.expander(f"{icone} {label} — {status_txt}", expanded=(n_vinc > 0 and n_up == 0)):
+                # Mostra caminhos originais importados
+                if paths_vinculados:
+                    st.markdown("**📋 Arquivos do projeto original:**")
+                    for p in paths_vinculados:
+                        nome_arquivo = p.replace("\\", "/").split("/")[-1]
+                        st.caption(f"  📄 {nome_arquivo}")
+                    st.markdown("**⬆️ Faça upload dos arquivos acima:**")
+
+                upload_pdfs(chave, f"Selecionar PDF(s) – {label}")
 
     sec("Logo da Instituição")
     logo_up = st.file_uploader("Imagem do logo (PNG/JPG)", type=["png","jpg","jpeg"])
