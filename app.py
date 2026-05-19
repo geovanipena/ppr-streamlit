@@ -230,7 +230,7 @@ def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
         df_ini,
         column_config=col_cfg,
         num_rows="dynamic",
-        use_container_width=True,
+        width='stretch',
         height=altura,
         key=f"editor_{chave}_{id(chave)}",
     )
@@ -671,7 +671,7 @@ with tabs[6]:
     st.divider()
     st.write("Clique em **Gerar PDF** para compilar o PPR completo.")
 
-    if st.button("📑 Gerar PDF", type="primary", use_container_width=True):
+    if st.button("📑 Gerar PDF", type="primary", width='stretch'):
         with st.spinner("Compilando o PPR..."):
             try:
                 from ppr_pdf_web import gerar_pdf_bytes
@@ -683,7 +683,7 @@ with tabs[6]:
                     data=pdf_bytes,
                     file_name=f"PPR_{nome_pdf}.pdf",
                     mime="application/pdf",
-                    use_container_width=True,
+                    width='stretch',
                 )
             except ImportError:
                 st.error("❌ Módulo ppr_pdf_web não encontrado. "
