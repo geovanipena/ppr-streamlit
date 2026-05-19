@@ -204,8 +204,11 @@ def importar_jsons(arquivos) -> dict:
 # ── Session state ─────────────────────────────────────────────────────────────
 if "dados" not in st.session_state:
     st.session_state.dados = dados_padrao()
+if "sv" not in st.session_state:
+    st.session_state.sv = 0  # session version — força refresh dos widgets ao importar
 
 d = st.session_state.dados
+sv = st.session_state.sv  # usado nas keys dos widgets
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -232,7 +235,7 @@ def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
         num_rows="dynamic",
         width='stretch',
         height=altura,
-        key=f"editor_{chave}_{id(chave)}",
+        key=f"editor_{chave}_{sv}",
     )
     # Converte de volta para lista de dicts, ignorando linhas completamente vazias
     rows = df_edit.to_dict("records")
@@ -247,7 +250,7 @@ def bloco_resp(titulo: str, chave: str, campos: list):
         val = d.get(chave, {})
         cols = st.columns(len(campos))
         for i, (k, lbl) in enumerate(campos):
-            val[k] = cols[i].text_input(lbl, val.get(k, ""), key=f"{chave}_{k}")
+            val[k] = cols[i].text_input(lbl, val.get(k, ""), key=f"{chave}_{k}_{sv}")
         d[chave] = val
 
 
@@ -303,12 +306,17 @@ with c2:
     if arqs_imp:
         try:
             novo = importar_jsons(arqs_imp)
-            # Preserva PDFs/logo ja carregados na sessao
             novo["_pdfs_bytes"] = d.get("_pdfs_bytes", {})
             novo["_logo_bytes"] = d.get("_logo_bytes")
+            # Limpa TODOS os estados de widgets para forçar re-render com novos valores
+            keys_preservar = {"dados", "sv", "import_json"}
+            for k in list(st.session_state.keys()):
+                if k not in keys_preservar:
+                    del st.session_state[k]
             st.session_state.dados = novo
+            st.session_state.sv += 1  # incrementa versão → novas keys → widgets zerados
             nomes = ", ".join(a.name for a in arqs_imp)
-            st.success(f"Importado: {nomes}")
+            st.success(f"✅ Importado: {nomes}")
             st.rerun()
         except Exception as e:
             st.error(f"Erro ao importar: {e}")
@@ -327,7 +335,12 @@ with c3:
 
 with c4:
     if st.button("🆕 Novo Projeto", type="secondary"):
+        keys_preservar = {"sv"}
+        for k in list(st.session_state.keys()):
+            if k not in keys_preservar:
+                del st.session_state[k]
         st.session_state.dados = dados_padrao()
+        st.session_state.sv += 1
         st.rerun()
 
 st.divider()
@@ -355,31 +368,31 @@ with tabs[0]:
     sec("Identificação")
     c1, c2 = st.columns(2)
     with c1:
-        inst["nome"]          = st.text_input("Nome da Instituição", inst.get("nome",""))
-        inst["matricula_cnen"]= st.text_input("Matrícula CNEN", inst.get("matricula_cnen",""))
-        inst["cnpj"]          = st.text_input("CNPJ", inst.get("cnpj",""))
-        inst["objetivo"]      = st.text_area("Objetivo", inst.get("objetivo",""), height=80)
-        inst["horario"]       = st.text_input("Horário de Funcionamento", inst.get("horario",""))
-        inst["telefone"]      = st.text_input("Telefone", inst.get("telefone",""))
+        inst["nome"]          = st.text_input("Nome da Instituição", inst.get("nome","", key=f"inst_nome_{sv}"))
+        inst["matricula_cnen"]= st.text_input("Matrícula CNEN", inst.get("matricula_cnen","", key=f"inst_matricula_cnen_{sv}"))
+        inst["cnpj"]          = st.text_input("CNPJ", inst.get("cnpj","", key=f"inst_cnpj_{sv}"))
+        inst["objetivo"]      = st.text_area("Objetivo", inst.get("objetivo","", key=f"inst_objetivo_{sv}"), height=80)
+        inst["horario"]       = st.text_input("Horário de Funcionamento", inst.get("horario","", key=f"inst_horario_{sv}"))
+        inst["telefone"]      = st.text_input("Telefone", inst.get("telefone","", key=f"inst_telefone_{sv}"))
     with c2:
-        inst["rua"]           = st.text_input("Rua / Av.", inst.get("rua",""))
+        inst["rua"]           = st.text_input("Rua / Av.", inst.get("rua","", key=f"inst_rua_{sv}"))
         a, b = st.columns([1,2])
         inst["complemento"]   = a.text_input("Número", inst.get("complemento",""))
         inst["bairro"]        = b.text_input("Bairro", inst.get("bairro",""))
         a, b, c = st.columns([3,1,2])
-        inst["cidade"]        = a.text_input("Cidade", inst.get("cidade",""))
-        inst["uf"]            = b.text_input("UF", inst.get("uf",""))
-        inst["cep"]           = c.text_input("CEP", inst.get("cep",""))
+        inst["cidade"]        = a.text_input("Cidade", inst.get("cidade",""), key=f"inst_cidade_{sv}")
+        inst["uf"]            = b.text_input("UF", inst.get("uf",""), key=f"inst_uf_{sv}")
+        inst["cep"]           = c.text_input("CEP", inst.get("cep",""), key=f"inst_cep_{sv}")
         a, b = st.columns(2)
-        inst["grupo"]         = a.text_input("Grupo CNEN", inst.get("grupo",""))
-        inst["subgrupo"]      = b.text_input("Subgrupo", inst.get("subgrupo",""))
-        inst["instituicao"]   = st.text_input("Cabeçalho (instituição)", inst.get("instituicao",""))
+        inst["grupo"]         = a.text_input("Grupo CNEN", inst.get("grupo",""), key=f"inst_grupo_{sv}")
+        inst["subgrupo"]      = b.text_input("Subgrupo", inst.get("subgrupo",""), key=f"inst_subgrupo_{sv}")
+        inst["instituicao"]   = st.text_input("Cabeçalho (instituição)", inst.get("instituicao",""), key=f"inst_instituicao_{sv}")
 
     sec("Dados do Documento")
     a, b, c = st.columns(3)
-    inst["cidade_data"] = a.text_input("Cidade (rodapé)", inst.get("cidade_data",""))
-    inst["mes"]         = b.text_input("Mês", inst.get("mes",""))
-    inst["ano"]         = c.text_input("Ano", inst.get("ano",""))
+    inst["cidade_data"] = a.text_input("Cidade (rodapé)", inst.get("cidade_data",""), key=f"inst_cidade_data_{sv}")
+    inst["mes"]         = b.text_input("Mês", inst.get("mes",""), key=f"inst_mes_{sv}")
+    inst["ano"]         = c.text_input("Ano", inst.get("ano",""), key=f"inst_ano_{sv}")
 
 
 # ───────────────────────────────────────────────────────────────────────────────
