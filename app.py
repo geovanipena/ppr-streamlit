@@ -8,31 +8,396 @@ from copy import deepcopy
 import pandas as pd
 
 st.set_page_config(
-    page_title="Gerador de PPR ☢️",
+    page_title="Gerador de PPR",
     page_icon="☢️",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-h1  { color: #1B3A6B; }
-h2  { color: #1B3A6B; font-size: 1.1rem; margin-top: 1rem; }
-h3  { color: #2E86C1; font-size: 1rem; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── Reset / Base ─────────────────────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0F1F3D 0%, #1B3A6B 100%);
+    border-right: none;
+}
+[data-testid="stSidebar"] * {
+    color: #E2E8F0 !important;
+}
+[data-testid="stSidebar"] .stMarkdown h1 {
+    color: #fff !important;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+[data-testid="stSidebar"] .stMarkdown hr {
+    border-color: rgba(255,255,255,0.15);
+    margin: 0.5rem 0;
+}
+
+/* ── Main area ────────────────────────────────────────────────────────── */
+.main .block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    max-width: 1300px;
+}
+
+/* ── Page header ──────────────────────────────────────────────────────── */
+.ppr-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 0.25rem;
+}
+.ppr-header .atom-icon {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, #1B3A6B, #2563EB);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.6rem;
+    flex-shrink: 0;
+    box-shadow: 0 4px 14px rgba(37,99,235,0.35);
+}
+.ppr-header h1 {
+    font-size: 1.65rem !important;
+    font-weight: 700 !important;
+    color: #0F1F3D !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+}
+.ppr-header .subtitle {
+    font-size: 0.8rem;
+    color: #64748B;
+    font-weight: 400;
+    margin-top: 2px;
+}
+
+/* ── Progress bar custom ──────────────────────────────────────────────── */
+.progress-wrap {
+    background: #F1F5F9;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 0.5rem;
+}
+.progress-label {
+    font-size: 0.78rem;
+    color: #64748B;
+    font-weight: 500;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.progress-bar-bg {
+    background: #E2E8F0;
+    border-radius: 99px;
+    height: 8px;
+    overflow: hidden;
+}
+.progress-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width 0.5s ease;
+}
+
+/* ── Alert banner ─────────────────────────────────────────────────────── */
+.alert-unsaved {
+    background: #FEF9C3;
+    border: 1px solid #FDE047;
+    border-left: 4px solid #EAB308;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    color: #713F12;
+    font-weight: 500;
+}
+.alert-ok {
+    background: #F0FDF4;
+    border: 1px solid #86EFAC;
+    border-left: 4px solid #22C55E;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    color: #14532D;
+    font-weight: 500;
+}
+
+/* ── Section header ───────────────────────────────────────────────────── */
 .sec-hdr {
-    background:#EBF5FB; padding:6px 12px;
-    border-left:4px solid #1B3A6B;
-    border-radius:4px; margin:10px 0 4px 0;
-    font-weight:700; color:#1B3A6B; font-size:.95rem;
+    background: linear-gradient(90deg, #EFF6FF 0%, #F8FAFC 100%);
+    padding: 8px 14px;
+    border-left: 4px solid #2563EB;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0 8px 0;
+    font-weight: 600;
+    color: #1E3A5F;
+    font-size: 0.88rem;
+    letter-spacing: 0.01em;
 }
-.stTabs [data-baseweb="tab"] { font-weight:600; }
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+.card {
+    background: #fff;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* ── Metric card ──────────────────────────────────────────────────────── */
+.metric-card {
+    background: #fff;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.metric-card .m-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #0F1F3D;
+    line-height: 1;
+}
+.metric-card .m-label {
+    font-size: 0.72rem;
+    color: #64748B;
+    font-weight: 500;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px;
+    background: #F8FAFC;
+    border-radius: 10px;
+    padding: 4px;
+    border: 1px solid #E2E8F0;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 7px;
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: #475569;
+    padding: 7px 14px;
+    border: none;
+    background: transparent;
+    transition: all 0.15s ease;
+}
 .stTabs [aria-selected="true"] {
-    background:#1B3A6B !important; color:white !important;
+    background: #1B3A6B !important;
+    color: white !important;
+    box-shadow: 0 2px 6px rgba(27,58,107,0.3);
 }
+.stTabs [data-baseweb="tab"]:hover:not([aria-selected="true"]) {
+    background: #E2E8F0 !important;
+    color: #1E3A5F !important;
+}
+.stTabs [data-baseweb="tab-panel"] {
+    padding-top: 16px;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.stButton button[kind="primary"] {
+    background: linear-gradient(135deg, #1B3A6B, #2563EB);
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.88rem;
+    padding: 0.5rem 1.2rem;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+    transition: all 0.2s ease;
+}
+.stButton button[kind="primary"]:hover {
+    box-shadow: 0 4px 14px rgba(37,99,235,0.45);
+    transform: translateY(-1px);
+}
+.stButton button[kind="secondary"] {
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    color: #475569;
+    font-weight: 500;
+    font-size: 0.88rem;
+    background: #fff;
+    transition: all 0.2s ease;
+}
+.stButton button[kind="secondary"]:hover {
+    border-color: #1B3A6B;
+    color: #1B3A6B;
+    background: #EFF6FF;
+}
+
+/* ── Download button ──────────────────────────────────────────────────── */
+.stDownloadButton button {
+    background: linear-gradient(135deg, #059669, #10B981) !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    color: white !important;
+    box-shadow: 0 2px 8px rgba(16,185,129,0.3) !important;
+}
+
+/* ── Expanders ────────────────────────────────────────────────────────── */
+.streamlit-expanderHeader {
+    background: #F8FAFC;
+    border-radius: 8px;
+    border: 1px solid #E2E8F0;
+    font-weight: 500;
+    color: #1E3A5F;
+    font-size: 0.88rem;
+}
+.streamlit-expanderContent {
+    border: 1px solid #E2E8F0;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 12px;
+}
+
+/* ── Inputs ───────────────────────────────────────────────────────────── */
+.stTextInput input, .stTextArea textarea {
+    border-radius: 8px;
+    border: 1px solid #CBD5E1;
+    font-size: 0.88rem;
+    transition: border-color 0.15s ease;
+}
+.stTextInput input:focus, .stTextArea textarea:focus {
+    border-color: #2563EB;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+}
+
+/* ── Labels ───────────────────────────────────────────────────────────── */
+.stTextInput label, .stTextArea label, .stSelectbox label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #374151;
+}
+
+/* ── Divider ──────────────────────────────────────────────────────────── */
+hr {
+    border-color: #E2E8F0;
+    margin: 1rem 0;
+}
+
+/* ── Checklist items ──────────────────────────────────────────────────── */
+.check-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 0.85rem;
+    color: #374151;
+    border-bottom: 1px solid #F1F5F9;
+}
+.check-item:last-child { border-bottom: none; }
+
+/* ── Sidebar nav items ────────────────────────────────────────────────── */
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: #CBD5E1;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 2px;
+}
+.nav-item:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+.nav-item.active {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* ── Info/Success/Error boxes ─────────────────────────────────────────── */
+.stAlert {
+    border-radius: 10px;
+    font-size: 0.85rem;
+}
+
+/* ── File uploader ────────────────────────────────────────────────────── */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #CBD5E1;
+    border-radius: 10px;
+    padding: 12px;
+    background: #F8FAFC;
+    transition: border-color 0.2s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: #2563EB;
+    background: #EFF6FF;
+}
+
+/* ── Dataframe / editor ───────────────────────────────────────────────── */
+[data-testid="stDataEditor"] {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #E2E8F0;
+}
+
+/* ── Sidebar logo area ────────────────────────────────────────────────── */
+.sidebar-logo {
+    text-align: center;
+    padding: 16px 0 8px 0;
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+.sidebar-logo .icon {
+    font-size: 2.2rem;
+    line-height: 1;
+    display: block;
+}
+.sidebar-logo .app-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff !important;
+    letter-spacing: 0.03em;
+    margin-top: 6px;
+    display: block;
+}
+.sidebar-logo .app-sub {
+    font-size: 0.72rem;
+    color: #94A3B8 !important;
+    margin-top: 2px;
+    display: block;
+}
+
+/* ── Badge ────────────────────────────────────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.badge-green { background: #DCFCE7; color: #166534; }
+.badge-yellow { background: #FEF9C3; color: #713F12; }
+.badge-red { background: #FEE2E2; color: #991B1B; }
+
 </style>
 """, unsafe_allow_html=True)
 
-def sec(txt): st.markdown(f'<div class="sec-hdr">{txt}</div>', unsafe_allow_html=True)
+
+def sec(txt):
+    st.markdown(f'<div class="sec-hdr">{txt}</div>', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -76,41 +441,25 @@ def dados_padrao() -> dict:
             "gerencia_rejeitos",
         ]},
         "imagens": {"logo":"","classificacao_areas":[],"gerencia_rejeitos":[]},
-        # Armazenamento de bytes dos PDFs enviados via upload (base64)
         "_pdfs_bytes": {},
         "_logo_bytes": None,
     }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  IMPORTAÇÃO — suporte ao formato antigo (7 arquivos .txt/.json separados)
-#  e ao formato novo (1 arquivo JSON unificado)
+#  IMPORTAÇÃO
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _mesclar_arquivo(base: dict, nome: str, conteudo: dict) -> dict:
-    """
-    Detecta o tipo do arquivo pelo nome e mescla no dict `base`.
-
-    Formatos aceitos:
-      instalacao.json  → chaves diretas (sem wrapper)
-      pessoal.json     → chaves diretas (responsaveis, supervisor, equipes_*)
-      equipamentos.json→ chaves diretas (equipamentos, fontes_referencia, …)
-      qualidade.json   → chaves diretas (testes_*, sistemas_planejamento, …)
-      textos.json      → {"textos_caps": {...}}
-      pdfs.json        → {"pdfs": {...}}
-      imagens.json     → {"imagens": {...}}
-    """
     nome_lower = nome.lower().replace(".txt", "").replace(".json", "")
 
     if nome_lower == "instalacao":
-        # pode vir com ou sem wrapper {"instalacao": {...}}
         if "instalacao" in conteudo and isinstance(conteudo["instalacao"], dict):
             base["instalacao"].update(conteudo["instalacao"])
         else:
             base["instalacao"].update(conteudo)
 
     elif nome_lower == "pessoal":
-        # chaves diretas no root
         chaves_pessoal = [
             "responsaveis", "supervisor", "substituto_supervisor",
             "responsavel_tecnico", "substituto_rt", "diretor_clinico",
@@ -141,34 +490,28 @@ def _mesclar_arquivo(base: dict, nome: str, conteudo: dict) -> dict:
                 base[k] = conteudo[k]
 
     elif nome_lower == "textos":
-        # pode vir como {"textos_caps": {...}} ou diretamente {"classificacao_areas": ...}
         if "textos_caps" in conteudo:
             base["textos_caps"].update(conteudo["textos_caps"])
         else:
             base["textos_caps"].update(conteudo)
 
     elif nome_lower == "pdfs":
-        # pode vir como {"pdfs": {...}} ou direto
         src = conteudo.get("pdfs", conteudo)
         if isinstance(src, dict):
             base["pdfs"].update(src)
 
     elif nome_lower == "imagens":
-        # pode vir como {"imagens": {...}} ou direto
         src = conteudo.get("imagens", conteudo)
         if isinstance(src, dict):
-            # logo pode ser string ou lista — normaliza para string
             if "logo" in src:
                 logo = src["logo"]
                 src["logo"] = logo[0] if isinstance(logo, list) and logo else (logo or "")
             base["imagens"].update(src)
 
     else:
-        # Arquivo unificado (novo formato exportado pelo app)
-        # Mescla tudo diretamente, preservando chaves internas
         for k, v in conteudo.items():
             if k.startswith("_"):
-                continue  # ignora _pdfs_bytes, _logo_bytes
+                continue
             if k == "instalacao" and isinstance(v, dict):
                 base["instalacao"].update(v)
             elif k == "textos_caps" and isinstance(v, dict):
@@ -184,20 +527,14 @@ def _mesclar_arquivo(base: dict, nome: str, conteudo: dict) -> dict:
 
 
 def importar_jsons(arquivos) -> dict:
-    """
-    Recebe lista de UploadedFile e devolve um dict de dados completo.
-    Aceita 1 arquivo (formato novo) ou vários arquivos separados (formato antigo).
-    """
     base = dados_padrao()
-
     for arq in arquivos:
         try:
             conteudo = json.loads(arq.read())
-            nome_sem_ext = arq.name.rsplit(".", 1)[0]  # tira extensão
+            nome_sem_ext = arq.name.rsplit(".", 1)[0]
             base = _mesclar_arquivo(base, nome_sem_ext, conteudo)
         except Exception as e:
             st.warning(f"⚠️ Erro ao ler **{arq.name}**: {e}")
-
     return base
 
 
@@ -207,7 +544,7 @@ if "dados" not in st.session_state:
 if "sv" not in st.session_state:
     st.session_state.sv = 0
 if "hash_salvo" not in st.session_state:
-    st.session_state.hash_salvo = ""   # hash dos dados na última exportação
+    st.session_state.hash_salvo = ""
 
 d = st.session_state.dados
 sv = st.session_state.sv
@@ -218,50 +555,39 @@ sv = st.session_state.sv
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _hash_dados(dados: dict) -> str:
-    """Hash MD5 dos dados (sem bytes binários) para detectar mudanças."""
     exportar = {k: v for k, v in dados.items() if not k.startswith("_")}
     return hashlib.md5(json.dumps(exportar, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
 def calcular_progresso(dados: dict) -> tuple:
-    """
-    Retorna (pct: int, itens: list[dict]) onde cada item tem
-    {label, ok, critico} para montar o checklist.
-    """
     inst = dados.get("instalacao", {})
     itens = [
-        # ── Identificação ──────────────────────────────────────────────
-        {"label": "Nome da instalação",         "ok": bool(inst.get("nome")),           "critico": True},
-        {"label": "Matrícula CNEN",             "ok": bool(inst.get("matricula_cnen")), "critico": True},
-        {"label": "CNPJ",                       "ok": bool(inst.get("cnpj")),           "critico": True},
-        {"label": "Endereço completo",          "ok": all(inst.get(k) for k in ["rua","cidade","uf","cep"]), "critico": False},
-        {"label": "Grupo/Subgrupo CNEN",        "ok": bool(inst.get("grupo")),          "critico": True},
-        {"label": "Objetivo da instalação",     "ok": bool(inst.get("objetivo")),       "critico": False},
-        # ── Responsáveis ───────────────────────────────────────────────
-        {"label": "Titular(es) cadastrado(s)",  "ok": len(dados.get("responsaveis",[])) > 0, "critico": True},
-        {"label": "SPR (nome + RT + RA)",       "ok": all(dados.get("supervisor",{}).get(k) for k in ["nome","rt","ra"]), "critico": True},
-        {"label": "Substituto do SPR",          "ok": bool(dados.get("substituto_supervisor",{}).get("nome")), "critico": True},
-        {"label": "Responsável Técnico",        "ok": all(dados.get("responsavel_tecnico",{}).get(k) for k in ["nome","crm"]), "critico": True},
-        {"label": "Substituto do RT",           "ok": bool(dados.get("substituto_rt",{}).get("nome")), "critico": False},
-        # ── Equipes ────────────────────────────────────────────────────
-        {"label": "Médicos cadastrados",        "ok": len(dados.get("equipes_medicos",[])) > 0,   "critico": True},
-        {"label": "Físicos médicos",            "ok": len(dados.get("equipes_fisicos",[])) > 0,   "critico": True},
-        {"label": "Técnicos em RT",             "ok": len(dados.get("equipes_tecnicos",[])) > 0,  "critico": False},
-        # ── Equipamentos ───────────────────────────────────────────────
-        {"label": "Equipamentos/Fontes",        "ok": len(dados.get("equipamentos",[])) > 0,      "critico": True},
-        {"label": "Conjuntos dosimétricos",     "ok": len(dados.get("conjunto_dosimetrico",[])) > 0, "critico": True},
-        {"label": "Monitores de área",          "ok": len(dados.get("monitores_area",[])) > 0,    "critico": False},
-        # ── Garantia da Qualidade ──────────────────────────────────────
-        {"label": "Testes diários definidos",   "ok": len(dados.get("testes_diarios",[])) > 0,    "critico": True},
-        {"label": "Testes mensais definidos",   "ok": len(dados.get("testes_mensais",[])) > 0,    "critico": True},
-        {"label": "Testes anuais definidos",    "ok": len(dados.get("testes_anuais",[])) > 0,     "critico": True},
-        {"label": "Sistemas de planejamento",   "ok": len(dados.get("sistemas_planejamento",[])) > 0, "critico": False},
-        # ── Textos ─────────────────────────────────────────────────────
-        {"label": "Texto: Classificação de áreas",     "ok": bool(dados.get("textos_caps",{}).get("classificacao_areas")),    "critico": True},
-        {"label": "Texto: Monitoração individual",     "ok": bool(dados.get("textos_caps",{}).get("monitoracao_individual")), "critico": True},
-        {"label": "Texto: Procedimentos de emergência","ok": bool(dados.get("textos_caps",{}).get("procedimentos_emergencia")),"critico": True},
-        {"label": "Texto: Gerência de rejeitos",       "ok": bool(dados.get("textos_caps",{}).get("gerencia_rejeitos")),     "critico": False},
-        {"label": "Texto: Cálculo de barreiras",       "ok": bool(dados.get("textos_caps",{}).get("calculo_barreiras")),    "critico": False},
+        {"label": "Nome da instalação",          "ok": bool(inst.get("nome")),           "critico": True},
+        {"label": "Matrícula CNEN",              "ok": bool(inst.get("matricula_cnen")), "critico": True},
+        {"label": "CNPJ",                        "ok": bool(inst.get("cnpj")),           "critico": True},
+        {"label": "Endereço completo",           "ok": all(inst.get(k) for k in ["rua","cidade","uf","cep"]), "critico": False},
+        {"label": "Grupo/Subgrupo CNEN",         "ok": bool(inst.get("grupo")),          "critico": True},
+        {"label": "Objetivo da instalação",      "ok": bool(inst.get("objetivo")),       "critico": False},
+        {"label": "Titular(es) cadastrado(s)",   "ok": len(dados.get("responsaveis",[])) > 0, "critico": True},
+        {"label": "SPR (nome + RT + RA)",        "ok": all(dados.get("supervisor",{}).get(k) for k in ["nome","rt","ra"]), "critico": True},
+        {"label": "Substituto do SPR",           "ok": bool(dados.get("substituto_supervisor",{}).get("nome")), "critico": True},
+        {"label": "Responsável Técnico",         "ok": all(dados.get("responsavel_tecnico",{}).get(k) for k in ["nome","crm"]), "critico": True},
+        {"label": "Substituto do RT",            "ok": bool(dados.get("substituto_rt",{}).get("nome")), "critico": False},
+        {"label": "Médicos cadastrados",         "ok": len(dados.get("equipes_medicos",[])) > 0,   "critico": True},
+        {"label": "Físicos médicos",             "ok": len(dados.get("equipes_fisicos",[])) > 0,   "critico": True},
+        {"label": "Técnicos em RT",              "ok": len(dados.get("equipes_tecnicos",[])) > 0,  "critico": False},
+        {"label": "Equipamentos/Fontes",         "ok": len(dados.get("equipamentos",[])) > 0,      "critico": True},
+        {"label": "Conjuntos dosimétricos",      "ok": len(dados.get("conjunto_dosimetrico",[])) > 0, "critico": True},
+        {"label": "Monitores de área",           "ok": len(dados.get("monitores_area",[])) > 0,    "critico": False},
+        {"label": "Testes diários definidos",    "ok": len(dados.get("testes_diarios",[])) > 0,    "critico": True},
+        {"label": "Testes mensais definidos",    "ok": len(dados.get("testes_mensais",[])) > 0,    "critico": True},
+        {"label": "Testes anuais definidos",     "ok": len(dados.get("testes_anuais",[])) > 0,     "critico": True},
+        {"label": "Sistemas de planejamento",    "ok": len(dados.get("sistemas_planejamento",[])) > 0, "critico": False},
+        {"label": "Texto: Classificação de áreas",      "ok": bool(dados.get("textos_caps",{}).get("classificacao_areas")),    "critico": True},
+        {"label": "Texto: Monitoração individual",      "ok": bool(dados.get("textos_caps",{}).get("monitoracao_individual")), "critico": True},
+        {"label": "Texto: Procedimentos de emergência", "ok": bool(dados.get("textos_caps",{}).get("procedimentos_emergencia")),"critico": True},
+        {"label": "Texto: Gerência de rejeitos",        "ok": bool(dados.get("textos_caps",{}).get("gerencia_rejeitos")),     "critico": False},
+        {"label": "Texto: Cálculo de barreiras",        "ok": bool(dados.get("textos_caps",{}).get("calculo_barreiras")),    "critico": False},
     ]
     total = len(itens)
     ok_count = sum(1 for i in itens if i["ok"])
@@ -269,23 +595,16 @@ def calcular_progresso(dados: dict) -> tuple:
 
 
 def erros_criticos(itens: list) -> list:
-    """Retorna itens críticos não preenchidos."""
     return [i for i in itens if i["critico"] and not i["ok"]]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  HELPERS PARA TABELAS (data_editor)
+#  HELPERS PARA TABELAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
-    """
-    Renderiza um st.data_editor para d[chave] (lista de dicts).
-    colunas: lista de (key, label)
-    Retorna a lista atualizada.
-    """
     col_cfg = {c[0]: st.column_config.TextColumn(c[1]) for c in colunas}
     df_ini = pd.DataFrame(d.get(chave, []) or [], columns=[c[0] for c in colunas])
-    # Garante que todas as colunas existam
     for c in colunas:
         if c[0] not in df_ini.columns:
             df_ini[c[0]] = ""
@@ -299,7 +618,6 @@ def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
         height=altura,
         key=f"editor_{chave}_{sv}",
     )
-    # Converte de volta para lista de dicts, ignorando linhas completamente vazias
     rows = df_edit.to_dict("records")
     rows = [r for r in rows if any(str(v).strip() for v in r.values())]
     d[chave] = rows
@@ -307,7 +625,6 @@ def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
 
 
 def bloco_resp(titulo: str, chave: str, campos: list):
-    """Bloco compacto de campos para responsáveis."""
     with st.expander(titulo, expanded=False):
         val = d.get(chave, {})
         cols = st.columns(len(campos))
@@ -317,11 +634,10 @@ def bloco_resp(titulo: str, chave: str, campos: list):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  UPLOAD DE PDFs — helper
+#  UPLOAD DE PDFs
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def upload_pdfs(chave_pdfs: str, label: str):
-    """Widget de upload de múltiplos PDFs para uma seção."""
     uploaded = st.file_uploader(
         label, type=["pdf"], accept_multiple_files=True,
         key=f"up_{chave_pdfs}"
@@ -335,7 +651,6 @@ def upload_pdfs(chave_pdfs: str, label: str):
             d["_pdfs_bytes"][key] = {"nome": f.name, "data": b64, "chave_secao": chave_pdfs}
         st.success(f"✅ {len(uploaded)} arquivo(s) carregado(s)")
 
-    # Lista arquivos já carregados nessa seção
     if d.get("_pdfs_bytes"):
         arqs = [v["nome"] for k, v in d["_pdfs_bytes"].items()
                 if v.get("chave_secao") == chave_pdfs]
@@ -344,29 +659,59 @@ def upload_pdfs(chave_pdfs: str, label: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  HEADER
+#  SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Calcula progresso e detecta mudanças não salvas
 pct_prog, itens_prog = calcular_progresso(d)
 hash_atual = _hash_dados(d)
 dados_modificados = (hash_atual != st.session_state.hash_salvo) and bool(d["instalacao"].get("nome"))
 
-# Linha 1: título + importar + exportar + novo
-c1, c2, c3, c4 = st.columns([4, 2, 2, 2])
-with c1:
-    st.title("☢️ Gerador de PPR")
-    nome_inst = d["instalacao"].get("nome") or "Nova Instalação"
-    st.caption(f"Plano de Proteção Radiológica  |  {nome_inst}")
+with st.sidebar:
+    st.markdown("""
+    <div class="sidebar-logo">
+        <span class="icon">☢️</span>
+        <span class="app-name">Gerador de PPR</span>
+        <span class="app-sub">Física Médica / Radioterapia</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-with c2:
+    nome_inst = d["instalacao"].get("nome") or "Nova Instalação"
+    st.markdown(f"**{nome_inst[:32]}**")
+    st.caption(f"CNEN: {d['instalacao'].get('matricula_cnen') or '—'}")
+
+    st.markdown("---")
+
+    # Progress ring summary
+    cor_prog = "#22C55E" if pct_prog >= 80 else "#F59E0B" if pct_prog >= 50 else "#EF4444"
+    st.markdown(f"""
+    <div style="text-align:center; padding:8px 0;">
+        <div style="font-size:2.2rem; font-weight:800; color:{cor_prog}; line-height:1;">{pct_prog}%</div>
+        <div style="font-size:0.72rem; color:#94A3B8; margin-top:4px; letter-spacing:0.05em; text-transform:uppercase;">Preenchimento</div>
+        <div style="background:rgba(255,255,255,0.15); border-radius:99px; height:5px; margin:8px 0; overflow:hidden;">
+            <div style="width:{pct_prog}%; background:{cor_prog}; height:100%; border-radius:99px;"></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if dados_modificados:
+        st.markdown("""
+        <div style="background:rgba(250,204,21,0.15); border:1px solid rgba(250,204,21,0.4);
+             border-radius:8px; padding:7px 10px; font-size:0.75rem; color:#FCD34D; text-align:center;">
+            ⚠️ Dados não salvos
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown('<div style="font-size:0.7rem; color:#64748B; text-transform:uppercase; letter-spacing:0.08em; font-weight:600; padding:4px 0;">Ações</div>', unsafe_allow_html=True)
+
+    # Import
     arqs_imp = st.file_uploader(
         "📂 Importar JSON(s)",
         type=["json", "txt"],
         accept_multiple_files=True,
         label_visibility="collapsed",
         key="import_json",
-        help="Selecione 1 arquivo unificado (novo) OU 7 arquivos separados do formato antigo.",
+        help="1 arquivo unificado (novo) OU arquivos separados do formato antigo.",
     )
     if arqs_imp:
         try:
@@ -379,29 +724,29 @@ with c2:
                     del st.session_state[k]
             st.session_state.dados = novo
             st.session_state.sv += 1
-            st.session_state.hash_salvo = _hash_dados(novo)  # importado = "salvo"
+            st.session_state.hash_salvo = _hash_dados(novo)
             nomes = ", ".join(a.name for a in arqs_imp)
-            st.success(f"✅ Importado: {nomes}")
+            st.success(f"✅ {nomes}")
             st.rerun()
         except Exception as e:
             st.error(f"Erro ao importar: {e}")
 
-with c3:
-    exportar = deepcopy(d)
-    exportar.pop("_pdfs_bytes", None)
-    exportar.pop("_logo_bytes", None)
-    json_str = json.dumps(exportar, ensure_ascii=False, indent=2)
+    # Export
+    exportar_d = deepcopy(d)
+    exportar_d.pop("_pdfs_bytes", None)
+    exportar_d.pop("_logo_bytes", None)
+    json_str = json.dumps(exportar_d, ensure_ascii=False, indent=2)
     nome_arq = (d["instalacao"].get("nome") or "PPR")[:25].replace(" ", "_")
     if st.download_button(
-        "💾 Exportar .json",
+        "💾 Exportar JSON",
         data=json_str.encode("utf-8"),
         file_name=f"PPR_{nome_arq}.json",
         mime="application/json",
+        use_container_width=True,
     ):
-        st.session_state.hash_salvo = hash_atual  # marca como salvo
+        st.session_state.hash_salvo = hash_atual
 
-with c4:
-    if st.button("🆕 Novo Projeto", type="secondary"):
+    if st.button("🆕 Novo Projeto", type="secondary", use_container_width=True):
         keys_preservar = {"sv"}
         for k in list(st.session_state.keys()):
             if k not in keys_preservar:
@@ -411,31 +756,52 @@ with c4:
         st.session_state.hash_salvo = ""
         st.rerun()
 
-# ── Barra de progresso + alerta de não salvo ──────────────────────────────
-col_prog, col_aviso = st.columns([3, 2])
-with col_prog:
-    cor = "#1E8449" if pct_prog >= 80 else "#E67E22" if pct_prog >= 50 else "#C0392B"
-    st.markdown(
-        f"""
-        <div style="margin:4px 0 2px 0; font-size:.85rem; color:#555;">
-            Preenchimento do PPR: <b style="color:{cor}">{pct_prog}%</b>
-        </div>
-        <div style="background:#eee; border-radius:8px; height:10px; overflow:hidden;">
-            <div style="width:{pct_prog}%; background:{cor}; height:100%; 
-                        border-radius:8px; transition:width .4s;"></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("---")
 
-with col_aviso:
-    if dados_modificados:
-        st.markdown(
-            """<div style="background:#FFF3CD; border:1px solid #FFC107; border-radius:6px;
-                padding:6px 12px; font-size:.85rem; color:#856404; text-align:center;">
-                ⚠️ <b>Dados não salvos</b> — Exporte o JSON para não perder!</div>""",
-            unsafe_allow_html=True,
-        )
+    # Quick stats
+    n_ok = sum(1 for i in itens_prog if i["ok"])
+    n_criticos = len(erros_criticos(itens_prog))
+    st.markdown(f"""
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px 0;">
+        <div style="background:rgba(34,197,94,0.15); border-radius:8px; padding:8px; text-align:center;">
+            <div style="font-size:1.3rem; font-weight:700; color:#4ADE80;">{n_ok}</div>
+            <div style="font-size:0.65rem; color:#86EFAC; text-transform:uppercase; letter-spacing:0.04em;">Completos</div>
+        </div>
+        <div style="background:rgba(239,68,68,0.15); border-radius:8px; padding:8px; text-align:center;">
+            <div style="font-size:1.3rem; font-weight:700; color:#F87171;">{n_criticos}</div>
+            <div style="font-size:0.65rem; color:#FCA5A5; text-transform:uppercase; letter-spacing:0.04em;">Pendentes</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  HEADER PRINCIPAL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+st.markdown(f"""
+<div class="ppr-header">
+    <div class="atom-icon">☢️</div>
+    <div>
+        <h1>Plano de Proteção Radiológica</h1>
+        <div class="subtitle">{nome_inst} &nbsp;·&nbsp; Física Médica / Radioterapia</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Progress bar
+cor_bar = "#22C55E" if pct_prog >= 80 else "#F59E0B" if pct_prog >= 50 else "#EF4444"
+st.markdown(f"""
+<div class="progress-wrap">
+    <div class="progress-label">
+        <span>Preenchimento do formulário</span>
+        <span style="font-weight:700; color:{cor_bar};">{pct_prog}% concluído</span>
+    </div>
+    <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width:{pct_prog}%; background:{cor_bar};"></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 st.divider()
 
@@ -459,34 +825,35 @@ tabs = st.tabs([
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[0]:
     inst = d["instalacao"]
-    sec("Identificação")
-    c1, c2 = st.columns(2)
+
+    sec("Identificação da Instituição")
+    c1, c2 = st.columns([1, 1])
     with c1:
-        inst["nome"]          = st.text_input("Nome da Instituição", inst.get("nome",""), key=f"inst_nome_{sv}")
-        inst["matricula_cnen"]= st.text_input("Matrícula CNEN", inst.get("matricula_cnen",""), key=f"inst_matricula_cnen_{sv}")
-        inst["cnpj"]          = st.text_input("CNPJ", inst.get("cnpj",""), key=f"inst_cnpj_{sv}")
-        inst["objetivo"]      = st.text_area("Objetivo", inst.get("objetivo",""), key=f"inst_objetivo_{sv}", height=80)
-        inst["horario"]       = st.text_input("Horário de Funcionamento", inst.get("horario",""), key=f"inst_horario_{sv}")
-        inst["telefone"]      = st.text_input("Telefone", inst.get("telefone",""), key=f"inst_telefone_{sv}")
+        inst["nome"]           = st.text_input("Nome da Instituição *", inst.get("nome",""), key=f"inst_nome_{sv}")
+        inst["matricula_cnen"] = st.text_input("Matrícula CNEN *", inst.get("matricula_cnen",""), key=f"inst_matricula_cnen_{sv}")
+        inst["cnpj"]           = st.text_input("CNPJ *", inst.get("cnpj",""), key=f"inst_cnpj_{sv}")
+        inst["objetivo"]       = st.text_area("Objetivo", inst.get("objetivo",""), key=f"inst_objetivo_{sv}", height=90)
+        inst["horario"]        = st.text_input("Horário de Funcionamento", inst.get("horario",""), key=f"inst_horario_{sv}")
+        inst["telefone"]       = st.text_input("Telefone", inst.get("telefone",""), key=f"inst_telefone_{sv}")
     with c2:
-        inst["rua"]           = st.text_input("Rua / Av.", inst.get("rua",""), key=f"inst_rua_{sv}")
-        a, b = st.columns([1,2])
-        inst["complemento"]   = a.text_input("Número", inst.get("complemento",""))
-        inst["bairro"]        = b.text_input("Bairro", inst.get("bairro",""))
-        a, b, c = st.columns([3,1,2])
-        inst["cidade"]        = a.text_input("Cidade", inst.get("cidade",""), key=f"inst_cidade_{sv}")
-        inst["uf"]            = b.text_input("UF", inst.get("uf",""), key=f"inst_uf_{sv}")
-        inst["cep"]           = c.text_input("CEP", inst.get("cep",""), key=f"inst_cep_{sv}")
+        inst["rua"]       = st.text_input("Rua / Av. *", inst.get("rua",""), key=f"inst_rua_{sv}")
+        a, b = st.columns([1, 2])
+        inst["complemento"] = a.text_input("Número", inst.get("complemento",""), key=f"inst_comp_{sv}")
+        inst["bairro"]      = b.text_input("Bairro", inst.get("bairro",""), key=f"inst_bairro_{sv}")
+        a, b, c3 = st.columns([3, 1, 2])
+        inst["cidade"] = a.text_input("Cidade *", inst.get("cidade",""), key=f"inst_cidade_{sv}")
+        inst["uf"]     = b.text_input("UF *", inst.get("uf",""), key=f"inst_uf_{sv}")
+        inst["cep"]    = c3.text_input("CEP *", inst.get("cep",""), key=f"inst_cep_{sv}")
         a, b = st.columns(2)
-        inst["grupo"]         = a.text_input("Grupo CNEN", inst.get("grupo",""), key=f"inst_grupo_{sv}")
-        inst["subgrupo"]      = b.text_input("Subgrupo", inst.get("subgrupo",""), key=f"inst_subgrupo_{sv}")
-        inst["instituicao"]   = st.text_input("Cabeçalho (instituição)", inst.get("instituicao",""), key=f"inst_instituicao_{sv}")
+        inst["grupo"]    = a.text_input("Grupo CNEN *", inst.get("grupo",""), key=f"inst_grupo_{sv}")
+        inst["subgrupo"] = b.text_input("Subgrupo", inst.get("subgrupo",""), key=f"inst_subgrupo_{sv}")
+        inst["instituicao"] = st.text_input("Cabeçalho (instituição)", inst.get("instituicao",""), key=f"inst_instituicao_{sv}")
 
     sec("Dados do Documento")
-    a, b, c = st.columns(3)
+    a, b, c3 = st.columns(3)
     inst["cidade_data"] = a.text_input("Cidade (rodapé)", inst.get("cidade_data",""), key=f"inst_cidade_data_{sv}")
     inst["mes"]         = b.text_input("Mês", inst.get("mes",""), key=f"inst_mes_{sv}")
-    inst["ano"]         = c.text_input("Ano", inst.get("ano",""), key=f"inst_ano_{sv}")
+    inst["ano"]         = c3.text_input("Ano", inst.get("ano",""), key=f"inst_ano_{sv}")
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -497,7 +864,6 @@ with tabs[1]:
                    "🛠️ Técnicos", "📐 Dosimetristas", "🩺 Enfermagem",
                    "👥 Demais IOEs", "🏥 ASOs"])
 
-    # ── Responsáveis ────────────────────────────────────────────────────────────
     with sub[0]:
         sec("Titulares da Instalação")
         tabela_editavel("responsaveis",
@@ -669,19 +1035,19 @@ with tabs[3]:
 with tabs[4]:
     tc = d.get("textos_caps", {})
     textos_conf = [
-        ("classificacao_areas",    "Classificação de Áreas"),
-        ("controle_acesso",        "Mecanismos de Controle de Acesso"),
-        ("monitoracao_individual", "Monitoração Individual"),
-        ("monitoracao_areas",      "Monitoração de Áreas"),
-        ("controle_medico",        "Controle Médico dos IOEs"),
-        ("niveis_operacionais",    "Níveis Operacionais e Restrições"),
+        ("classificacao_areas",     "Classificação de Áreas"),
+        ("controle_acesso",         "Mecanismos de Controle de Acesso"),
+        ("monitoracao_individual",  "Monitoração Individual"),
+        ("monitoracao_areas",       "Monitoração de Áreas"),
+        ("controle_medico",         "Controle Médico dos IOEs"),
+        ("niveis_operacionais",     "Níveis Operacionais e Restrições"),
         ("procedimentos_emergencia","Procedimentos de Emergência"),
-        ("programa_treinamento",   "Programa de Treinamento em PR"),
-        ("programa_educacao",      "Programa de Educação Continuada"),
-        ("gerencia_rejeitos",      "Gerência de Rejeitos Radioativos"),
-        ("calculo_barreiras",      "Cálculo de Barreiras"),
-        ("matriz_risco",           "Matriz de Risco"),
-        ("auditoria_externa",      "Auditoria Externa"),
+        ("programa_treinamento",    "Programa de Treinamento em PR"),
+        ("programa_educacao",       "Programa de Educação Continuada"),
+        ("gerencia_rejeitos",       "Gerência de Rejeitos Radioativos"),
+        ("calculo_barreiras",       "Cálculo de Barreiras"),
+        ("matriz_risco",            "Matriz de Risco"),
+        ("auditoria_externa",       "Auditoria Externa"),
     ]
     st.caption("💡 Textos importados do projeto aparecem pré-preenchidos. Edite conforme necessário.")
     for chave, label in textos_conf:
@@ -690,7 +1056,7 @@ with tabs[4]:
         with st.expander(f"{icone} {label}", expanded=not preenchido):
             tc[chave] = st.text_area(
                 label, tc.get(chave, ""), height=200,
-                key=f"tc_{chave}_{sv}",   # ← sv garante refresh após import
+                key=f"tc_{chave}_{sv}",
                 label_visibility="collapsed"
             )
     d["textos_caps"] = tc
@@ -703,23 +1069,38 @@ with tabs[5]:
     pdfs_importados = d.get("pdfs", {})
     pdfs_bytes_map  = d.get("_pdfs_bytes", {})
 
-    # Conta arquivos por status
     total_vinculados = sum(len(v) for v in pdfs_importados.values() if isinstance(v, list))
     total_uploaded   = len(pdfs_bytes_map)
 
-    col_info1, col_info2, col_info3 = st.columns(3)
-    col_info1.metric("📋 Caminhos vinculados", total_vinculados,
-                     help="Arquivos referenciados no projeto original (caminhos locais)")
-    col_info2.metric("⬆️ PDFs carregados", total_uploaded,
-                     help="Arquivos efetivamente enviados nesta sessão e prontos para o PDF")
-    col_info3.metric("⚠️ Pendentes de upload",
-                     max(0, total_vinculados - total_uploaded),
-                     help="Arquivos vinculados que ainda precisam ser enviados")
+    # Metric cards
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="m-value">{total_vinculados}</div>
+            <div class="m-label">📋 Caminhos vinculados</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="m-value" style="color:#22C55E;">{total_uploaded}</div>
+            <div class="m-label">⬆️ PDFs carregados</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m3:
+        pendentes = max(0, total_vinculados - total_uploaded)
+        cor_p = "#EF4444" if pendentes > 0 else "#22C55E"
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="m-value" style="color:{cor_p};">{pendentes}</div>
+            <div class="m-label">⚠️ Upload pendente</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.info(
-        "📎 **Como funciona:** O projeto original vinculava PDFs por caminho local (G:/...). "
-        "Na versão web, você precisa **fazer upload** de cada arquivo. "
-        "Os arquivos carregados ✅ serão incorporados ao PPR gerado."
+        "**Como funciona:** O projeto original vinculava PDFs por caminho local. "
+        "Na versão web, faça **upload** de cada arquivo — eles serão incorporados ao PPR final."
     )
     st.divider()
 
@@ -742,9 +1123,8 @@ with tabs[5]:
     for i, (chave, label) in enumerate(secoes_pdf):
         col = c1 if i % 2 == 0 else c2
         with col:
-            # Verifica status desta seção
             paths_vinculados = pdfs_importados.get(chave, [])
-            paths_vinculados = [p for p in paths_vinculados if p]  # remove vazios
+            paths_vinculados = [p for p in paths_vinculados if p]
             uploaded_nesta_secao = [
                 v["nome"] for v in pdfs_bytes_map.values()
                 if v.get("chave_secao") == chave
@@ -764,7 +1144,6 @@ with tabs[5]:
             )
 
             with st.expander(f"{icone} {label} — {status_txt}", expanded=(n_vinc > 0 and n_up == 0)):
-                # Mostra caminhos originais importados
                 if paths_vinculados:
                     st.markdown("**📋 Arquivos do projeto original:**")
                     for p in paths_vinculados:
@@ -786,7 +1165,6 @@ with tabs[5]:
         except Exception:
             pass
 
-    # Resumo de arquivos carregados
     if d.get("_pdfs_bytes"):
         sec("Arquivos Carregados na Sessão")
         por_secao: dict = {}
@@ -808,7 +1186,6 @@ with tabs[6]:
     st.subheader("📑 Geração do Plano de Proteção Radiológica")
     inst_v = d["instalacao"]
 
-    # ── Checklist de validação ────────────────────────────────────────────────
     pct, itens = calcular_progresso(d)
     criticos_faltando = erros_criticos(itens)
 
@@ -817,7 +1194,6 @@ with tabs[6]:
     with col_check:
         sec("✅ Checklist de Completude")
 
-        # Agrupa por categoria
         grupos = [
             ("🏥 Identificação",      itens[0:6]),
             ("👤 Responsáveis",       itens[6:11]),
@@ -827,68 +1203,80 @@ with tabs[6]:
             ("📝 Textos",             itens[21:]),
         ]
         for titulo_grp, grupo in grupos:
-            ok_grp = sum(1 for i in grupo if i["ok"])
+            ok_grp    = sum(1 for i in grupo if i["ok"])
             total_grp = len(grupo)
-            cor_grp = "🟢" if ok_grp == total_grp else "🟡" if ok_grp > 0 else "🔴"
+            cor_grp   = "🟢" if ok_grp == total_grp else "🟡" if ok_grp > 0 else "🔴"
             with st.expander(f"{cor_grp} {titulo_grp} — {ok_grp}/{total_grp}", expanded=(ok_grp < total_grp)):
                 for item in grupo:
-                    icon = "✅" if item["ok"] else ("❌" if item["critico"] else "⚠️")
+                    icon   = "✅" if item["ok"] else ("❌" if item["critico"] else "⚠️")
                     sufixo = " *(obrigatório)*" if item["critico"] and not item["ok"] else ""
                     st.markdown(f"{icon} {item['label']}{sufixo}")
 
     with col_gerar:
-        sec("📊 Resumo")
-        st.metric("Preenchimento", f"{pct}%")
+        sec("📊 Status do Projeto")
 
-        c1g, c2g = st.columns(2)
-        c1g.metric("✅ OK", sum(1 for i in itens if i["ok"]))
-        c2g.metric("❌ Faltando", len(itens) - sum(1 for i in itens if i["ok"]))
+        # Metric cards grid
+        cor_pct = "#22C55E" if pct >= 80 else "#F59E0B" if pct >= 50 else "#EF4444"
+        st.markdown(f"""
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+            <div class="metric-card">
+                <div class="m-value" style="color:{cor_pct};">{pct}%</div>
+                <div class="m-label">Preenchimento</div>
+            </div>
+            <div class="metric-card">
+                <div class="m-value" style="color:#22C55E;">{sum(1 for i in itens if i["ok"])}</div>
+                <div class="m-label">✅ OK</div>
+            </div>
+            <div class="metric-card">
+                <div class="m-value" style="color:#EF4444;">{len(itens) - sum(1 for i in itens if i["ok"])}</div>
+                <div class="m-label">❌ Faltando</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         if criticos_faltando:
             faltando_txt = "\n".join(f"- {i['label']}" for i in criticos_faltando)
-            st.error(f"{len(criticos_faltando)} campo(s) obrigatório(s) faltando:\n{faltando_txt}")
+            st.error(f"**{len(criticos_faltando)} campo(s) obrigatório(s) faltando:**\n{faltando_txt}")
         else:
-            st.success("Todos os campos obrigatórios preenchidos! O PPR pode ser gerado.")
-
-
-
-
+            st.success("Todos os campos obrigatórios preenchidos!")
 
         st.divider()
 
         # Resumo rápido
         st.markdown("**Resumo do projeto:**")
-        st.write(f"🏥 {inst_v.get('nome','—')}")
-        st.write(f"📋 CNEN: {inst_v.get('matricula_cnen','—')}")
-        st.write(f"📍 {inst_v.get('cidade','—')}/{inst_v.get('uf','—')}")
-        st.write(f"👥 {len(d.get('equipes_medicos',[]))} médicos · "
-                 f"{len(d.get('equipes_fisicos',[]))} físicos")
-        st.write(f"⚙️ {len(d.get('equipamentos',[]))} equipamentos")
-        st.write(f"📎 {len(d.get('_pdfs_bytes',{}))} PDFs anexados")
+        st.markdown(f"""
+        <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px; padding:12px; font-size:0.84rem; color:#374151; line-height:1.8;">
+            🏥 <b>{inst_v.get('nome','—')}</b><br>
+            📋 CNEN: {inst_v.get('matricula_cnen','—')}<br>
+            📍 {inst_v.get('cidade','—')}/{inst_v.get('uf','—')}<br>
+            👥 {len(d.get('equipes_medicos',[]))} médicos · {len(d.get('equipes_fisicos',[]))} físicos<br>
+            ⚙️ {len(d.get('equipamentos',[]))} equipamentos<br>
+            📎 {len(d.get('_pdfs_bytes',{}))} PDFs anexados
+        </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
 
-        # Botão de geração — bloqueado se críticos faltando
         if criticos_faltando:
             st.warning("Complete os campos obrigatórios (❌) antes de gerar o PDF.")
             gerar_disabled = True
         else:
             gerar_disabled = False
 
-        if st.button("📑 Gerar PDF", type="primary", width="stretch",
+        if st.button("📑 Gerar PDF", type="primary", use_container_width=True,
                      disabled=gerar_disabled):
             with st.spinner("Compilando o PPR... isso pode levar alguns segundos."):
                 try:
                     from ppr_pdf_web import gerar_pdf_bytes
                     pdf_bytes = gerar_pdf_bytes(d)
-                    nome_pdf = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
+                    nome_pdf  = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
                     st.success("✅ PDF gerado com sucesso!")
                     st.download_button(
                         label="⬇️ Baixar PPR.pdf",
                         data=pdf_bytes,
                         file_name=f"PPR_{nome_pdf}.pdf",
                         mime="application/pdf",
-                        width="stretch",
+                        use_container_width=True,
                     )
                 except ImportError:
                     st.error("❌ Módulo ppr_pdf_web não encontrado.")
@@ -897,6 +1285,5 @@ with tabs[6]:
                     st.exception(e)
 
         st.caption(
-            "Os PDFs enviados na aba 'Arquivos PDFs' (SEVRRA, blindagem, auditoria etc.) "
-            "serão incorporados automaticamente ao documento final."
+            "PDFs enviados na aba 'Arquivos PDFs' serão incorporados automaticamente ao documento final."
         )
