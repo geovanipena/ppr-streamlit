@@ -598,6 +598,35 @@ def erros_criticos(itens: list) -> list:
     return [i for i in itens if i["critico"] and not i["ok"]]
 
 
+def avisos_tab(checks: list[dict]):
+    """Mostra banner de aviso com campos não preenchidos para a aba atual."""
+    pendentes = [c for c in checks if not c["ok"]]
+    if not pendentes:
+        return
+    criticos_tab  = [c for c in pendentes if c["critico"]]
+    opcionais_tab = [c for c in pendentes if not c["critico"]]
+    linhas = []
+    for c in criticos_tab:
+        linhas.append(f"<li>❌ <b>{c['label']}</b> <span style='color:#991B1B;font-size:0.75rem;'>(obrigatório)</span></li>")
+    for c in opcionais_tab:
+        linhas.append(f"<li>⚠️ {c['label']}</li>")
+    cor_borda = "#EF4444" if criticos_tab else "#F59E0B"
+    cor_bg    = "#FEF2F2" if criticos_tab else "#FFFBEB"
+    cor_txt   = "#7F1D1D" if criticos_tab else "#78350F"
+    st.markdown(f"""
+    <div style="background:{cor_bg}; border:1px solid {cor_borda}; border-left:4px solid {cor_borda};
+         border-radius:8px; padding:10px 14px; margin-bottom:12px;">
+        <div style="font-weight:600; color:{cor_txt}; font-size:0.85rem; margin-bottom:6px;">
+            {'❌ Campos obrigatórios faltando' if criticos_tab else '⚠️ Campos não preenchidos'}
+            &nbsp;<span style="font-weight:400; font-size:0.8rem;">({len(pendentes)} item{'s' if len(pendentes)>1 else ''})</span>
+        </div>
+        <ul style="margin:0; padding-left:18px; color:{cor_txt}; font-size:0.82rem; line-height:1.8;">
+            {''.join(linhas)}
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  HELPERS PARA TABELAS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -825,7 +854,15 @@ tabs = st.tabs([
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[0]:
     inst = d["instalacao"]
-
+    avisos_tab([
+        {"label": "Nome da instalação",  "ok": bool(inst.get("nome")),           "critico": True},
+        {"label": "Matrícula CNEN",      "ok": bool(inst.get("matricula_cnen")), "critico": True},
+        {"label": "CNPJ",               "ok": bool(inst.get("cnpj")),           "critico": True},
+        {"label": "Endereço completo",  "ok": all(inst.get(k) for k in ["rua","cidade","uf","cep"]), "critico": False},
+        {"label": "Grupo CNEN",         "ok": bool(inst.get("grupo")),          "critico": True},
+        {"label": "Objetivo",           "ok": bool(inst.get("objetivo")),       "critico": False},
+        {"label": "Cidade/Mês/Ano (documento)", "ok": all(inst.get(k) for k in ["cidade_data","mes","ano"]), "critico": False},
+    ])
     sec("Identificação da Instituição")
     c1, c2 = st.columns([1, 1])
     with c1:
@@ -860,6 +897,19 @@ with tabs[0]:
 #  TAB 2 – PESSOAL
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[1]:
+    avisos_tab([
+        {"label": "Titular(es) cadastrado(s)",  "ok": len(d.get("responsaveis",[])) > 0, "critico": True},
+        {"label": "SPR – Nome",                 "ok": bool(d.get("supervisor",{}).get("nome")), "critico": True},
+        {"label": "SPR – RT e RA",              "ok": bool(d.get("supervisor",{}).get("rt")) and bool(d.get("supervisor",{}).get("ra")), "critico": True},
+        {"label": "Substituto do SPR",          "ok": bool(d.get("substituto_supervisor",{}).get("nome")), "critico": True},
+        {"label": "Responsável Técnico",        "ok": all(d.get("responsavel_tecnico",{}).get(k) for k in ["nome","crm"]), "critico": True},
+        {"label": "Substituto do RT",           "ok": bool(d.get("substituto_rt",{}).get("nome")), "critico": False},
+        {"label": "Diretor Clínico",            "ok": bool(d.get("diretor_clinico",{}).get("nome")), "critico": False},
+        {"label": "Médicos cadastrados",        "ok": len(d.get("equipes_medicos",[])) > 0, "critico": True},
+        {"label": "Físicos médicos",            "ok": len(d.get("equipes_fisicos",[])) > 0, "critico": True},
+        {"label": "Técnicos em RT",             "ok": len(d.get("equipes_tecnicos",[])) > 0, "critico": False},
+        {"label": "ASOs preenchidos",           "ok": len(d.get("asos",[])) > 0, "critico": False},
+    ])
     sub = st.tabs(["👤 Responsáveis", "👨‍⚕️ Médicos", "🔬 Físicos",
                    "🛠️ Técnicos", "📐 Dosimetristas", "🩺 Enfermagem",
                    "👥 Demais IOEs", "🏥 ASOs"])
@@ -925,6 +975,13 @@ with tabs[1]:
 #  TAB 3 – EQUIPAMENTOS
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[2]:
+    avisos_tab([
+        {"label": "Equipamentos / Fontes de Radiação",  "ok": len(d.get("equipamentos",[])) > 0,       "critico": True},
+        {"label": "Conjuntos dosimétricos",             "ok": len(d.get("conjunto_dosimetrico",[])) > 0,"critico": True},
+        {"label": "Instrumentos de medição",            "ok": len(d.get("instrumentos_medicao",[])) > 0,"critico": False},
+        {"label": "Monitores de área",                  "ok": len(d.get("monitores_area",[])) > 0,      "critico": False},
+        {"label": "Fantomas",                           "ok": len(d.get("fantomas",[])) > 0,            "critico": False},
+    ])
     sub = st.tabs(["☢️ Fontes de Radiação", "🔋 Fontes de Referência",
                    "🔬 Conj. Dosimétricos", "📏 Instrumentos",
                    "🧊 Fantomas", "📡 Monitores de Área", "🖥️ Outros"])
@@ -985,26 +1042,36 @@ with tabs[2]:
 #  TAB 4 – GARANTIA DA QUALIDADE
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[3]:
-    sub = st.tabs(["📅 Diários", "📆 Mensais", "🗓️ Anuais",
-                   "💉 Braquiterapia", "🔆 Ortovoltagem",
-                   "🖥️ Sistemas de Planejamento", "🎯 Técnicas de Tratamento"])
+    avisos_tab([
+        {"label": "Testes diários (Aceleradores)",   "ok": len(d.get("testes_diarios",[])) > 0,          "critico": True},
+        {"label": "Testes mensais (Aceleradores)",   "ok": len(d.get("testes_mensais",[])) > 0,          "critico": True},
+        {"label": "Testes anuais (Aceleradores)",    "ok": len(d.get("testes_anuais",[])) > 0,           "critico": True},
+        {"label": "Testes Braquiterapia",            "ok": len(d.get("testes_diarios_braqui",[])) > 0,   "critico": False},
+        {"label": "Testes Ortovoltagem",             "ok": len(d.get("testes_mensais_orto",[])) > 0,     "critico": False},
+        {"label": "Sistemas de planejamento",        "ok": len(d.get("sistemas_planejamento",[])) > 0,   "critico": False},
+        {"label": "Técnicas de tratamento",          "ok": len(d.get("tecnicas_tratamento",[])) > 0,     "critico": False},
+    ])
+
+    sub = st.tabs([
+        "🔬 Aceleradores Lineares",
+        "💉 Braquiterapia",
+        "🔆 Ortovoltagem",
+        "🖥️ Sistemas de Planejamento",
+        "🎯 Técnicas de Tratamento",
+    ])
 
     with sub[0]:
         sec("Testes Diários – Segurança, Dosimétricos e Mecânicos")
         tabela_editavel("testes_diarios",
             [("tipo","Tipo"),("teste","Teste"),("tolerancia","Tolerância")])
-
-    with sub[1]:
         sec("Testes Mensais")
         tabela_editavel("testes_mensais",
             [("tipo","Tipo"),("teste","Teste"),("tolerancia","Tolerância")])
-
-    with sub[2]:
         sec("Testes Anuais")
         tabela_editavel("testes_anuais",
             [("tipo","Tipo"),("teste","Teste"),("tolerancia","Tolerância")])
 
-    with sub[3]:
+    with sub[1]:
         sec("Testes Diários – Braquiterapia")
         tabela_editavel("testes_diarios_braqui",
             [("teste","Teste"),("tolerancia","Tolerância")])
@@ -1012,18 +1079,18 @@ with tabs[3]:
         tabela_editavel("testes_trimestrais_braqui",
             [("teste","Teste"),("tolerancia","Tolerância")])
 
-    with sub[4]:
+    with sub[2]:
         sec("Testes Mensais – Ortovoltagem")
         tabela_editavel("testes_mensais_orto",
             [("teste","Teste"),("tolerancia","Tolerância")])
 
-    with sub[5]:
+    with sub[3]:
         sec("Sistemas de Planejamento")
         tabela_editavel("sistemas_planejamento",
             [("nome","Nome"),("fabricante","Fabricante"),
              ("versao","Versão"),("tecnicas","Técnicas")])
 
-    with sub[6]:
+    with sub[4]:
         sec("Técnicas de Tratamento")
         tabela_editavel("tecnicas_tratamento",
             [("nome","Nome"),("descricao","Descrição")])
@@ -1034,6 +1101,21 @@ with tabs[3]:
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[4]:
     tc = d.get("textos_caps", {})
+    avisos_tab([
+        {"label": "Classificação de Áreas",       "ok": bool(tc.get("classificacao_areas")),    "critico": True},
+        {"label": "Controle de Acesso",           "ok": bool(tc.get("controle_acesso")),        "critico": False},
+        {"label": "Monitoração Individual",       "ok": bool(tc.get("monitoracao_individual")), "critico": True},
+        {"label": "Monitoração de Áreas",         "ok": bool(tc.get("monitoracao_areas")),      "critico": False},
+        {"label": "Controle Médico dos IOEs",     "ok": bool(tc.get("controle_medico")),        "critico": False},
+        {"label": "Níveis Operacionais",          "ok": bool(tc.get("niveis_operacionais")),    "critico": False},
+        {"label": "Procedimentos de Emergência",  "ok": bool(tc.get("procedimentos_emergencia")),"critico": True},
+        {"label": "Programa de Treinamento",      "ok": bool(tc.get("programa_treinamento")),   "critico": False},
+        {"label": "Programa de Educação",         "ok": bool(tc.get("programa_educacao")),      "critico": False},
+        {"label": "Gerência de Rejeitos",         "ok": bool(tc.get("gerencia_rejeitos")),      "critico": False},
+        {"label": "Cálculo de Barreiras",         "ok": bool(tc.get("calculo_barreiras")),      "critico": False},
+        {"label": "Matriz de Risco",              "ok": bool(tc.get("matriz_risco")),           "critico": False},
+        {"label": "Auditoria Externa",            "ok": bool(tc.get("auditoria_externa")),      "critico": False},
+    ])
     textos_conf = [
         ("classificacao_areas",     "Classificação de Áreas"),
         ("controle_acesso",         "Mecanismos de Controle de Acesso"),
@@ -1067,6 +1149,15 @@ with tabs[4]:
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[5]:
     pdfs_importados = d.get("pdfs", {})
+    pdfs_bytes_map_check = d.get("_pdfs_bytes", {})
+    _secoes_obrig = ["autorizacao_funcionamento", "calculo_blindagem", "sevrra"]
+    avisos_tab([
+        {"label": f"PDF – {s.replace('_',' ').title()}",
+         "ok": any(v.get("chave_secao") == s for v in pdfs_bytes_map_check.values()),
+         "critico": s in _secoes_obrig}
+        for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra",
+                  "levantamento_radiometrico","auditoria","contrato_monitoracao"]
+    ])
     pdfs_bytes_map  = d.get("_pdfs_bytes", {})
 
     total_vinculados = sum(len(v) for v in pdfs_importados.values() if isinstance(v, list))
@@ -1265,24 +1356,36 @@ with tabs[6]:
 
         if st.button("📑 Gerar PDF", type="primary", use_container_width=True,
                      disabled=gerar_disabled):
-            with st.spinner("Compilando o PPR... isso pode levar alguns segundos."):
-                try:
+            try:
+                import time
+                with st.status("⚙️ Elaborando o PPR...", expanded=True) as status:
+                    st.write("📋 Verificando e organizando dados...")
+                    time.sleep(0.4)
+                    st.write("🏗️ Montando estrutura do documento...")
+                    time.sleep(0.3)
+                    st.write("📝 Redigindo seções e tabelas...")
+                    time.sleep(0.3)
+                    st.write("📎 Incorporando PDFs e imagens anexados...")
+                    time.sleep(0.3)
+                    st.write("🖨️ Renderizando páginas...")
                     from ppr_pdf_web import gerar_pdf_bytes
                     pdf_bytes = gerar_pdf_bytes(d)
-                    nome_pdf  = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
-                    st.success("✅ PDF gerado com sucesso!")
-                    st.download_button(
-                        label="⬇️ Baixar PPR.pdf",
-                        data=pdf_bytes,
-                        file_name=f"PPR_{nome_pdf}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                    )
-                except ImportError:
-                    st.error("❌ Módulo ppr_pdf_web não encontrado.")
-                except Exception as e:
-                    st.error(f"❌ Erro ao gerar PDF: {e}")
-                    st.exception(e)
+                    st.write("✅ Documento finalizado!")
+                    status.update(label="✅ PPR gerado com sucesso!", state="complete", expanded=False)
+
+                nome_pdf = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
+                st.download_button(
+                    label="⬇️ Baixar PPR.pdf",
+                    data=pdf_bytes,
+                    file_name=f"PPR_{nome_pdf}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except ImportError:
+                st.error("❌ Módulo ppr_pdf_web não encontrado.")
+            except Exception as e:
+                st.error(f"❌ Erro ao gerar PDF: {e}")
+                st.exception(e)
 
         st.caption(
             "PDFs enviados na aba 'Arquivos PDFs' serão incorporados automaticamente ao documento final."
