@@ -27,6 +27,17 @@
 - For multi-step tasks, state a brief plan with a verify step for each.
 - Strong success criteria: loop independently. Weak criteria: ask first.
 
+## UI & Design (Frontend Design Guidelines)
+
+When building or modifying any UI element in this Streamlit app:
+
+- **Distinctive, not generic** — avoid default Streamlit aesthetics; use custom CSS (`st.markdown(..., unsafe_allow_html=True)`) to produce polished, production-grade visuals.
+- **Consistent design system** — Inter font, dark-blue sidebar gradient, card layouts with subtle shadows, and the existing color tokens (`#1E3A5F`, `#22C55E`, `#F59E0B`, `#EF4444`) already in `app.py`.
+- **No AI-aesthetic clichés** — no cookie-cutter gradients, no generic hero sections, no lorem ipsum placeholders.
+- **Hierarchy through spacing** — use whitespace, dividers, and `sec()` helper for visual grouping instead of heavy borders.
+- **Feedback at every action** — loaders (`st.status`), success/warning/error banners, and metric cards keep the user informed.
+- **Mobile-aware** — `st.columns` ratios and font sizes should degrade gracefully on narrow viewports.
+
 ## Project Context
 
 - **Stack:** Python / Streamlit, pandas, reportlab, pypdf, anthropic SDK
