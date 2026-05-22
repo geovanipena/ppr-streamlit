@@ -705,7 +705,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     nome_inst = d["instalacao"].get("nome") or "Nova Instalação"
-    st.markdown(f"**{nome_inst[:32]}**")
+    st.markdown(f"**{nome_inst}**")
     st.caption(f"CNEN: {d['instalacao'].get('matricula_cnen') or '—'}")
 
     st.markdown("---")
