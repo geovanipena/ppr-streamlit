@@ -689,14 +689,19 @@ def upload_pdfs(chave_pdfs: str, label: str):
 
 def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
     """Extrai registros de ASO de um PDF usando pypdf + Claude."""
-    import io, json, re
+    import io, json, re, os
     from pypdf import PdfReader
     import anthropic
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     texto = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    client = anthropic.Anthropic()
+    api_key = st.secrets.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY não encontrada. Configure em Settings > Secrets no Streamlit Cloud."
+        )
+    client = anthropic.Anthropic(api_key=api_key)
     msg = client.messages.create(
         model="claude-opus-4-7",
         max_tokens=4096,
