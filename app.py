@@ -1298,8 +1298,13 @@ with tabs[5]:
     n_asos = len(d.get("asos", []))
     icone_aso  = "✅" if n_asos > 0 else "📁"
     status_aso_txt = f"{n_asos} ASO(s) extraído(s)" if n_asos > 0 else "vazio"
+    # Mantém expander aberto se há arquivo selecionado (session state do file_uploader)
+    _aso_tem_arquivo = st.session_state.get("up_aso_extrator") is not None
     with c1:
-        with st.expander(f"{icone_aso} ASO – Atestados de Saúde Ocupacional — {status_aso_txt}"):
+        with st.expander(
+            f"{icone_aso} ASO – Atestados de Saúde Ocupacional — {status_aso_txt}",
+            expanded=_aso_tem_arquivo,
+        ):
             st.caption("Faça upload de um PDF único consolidando todos os ASOs e clique em **Extrair**.")
             aso_up = st.file_uploader(
                 "Selecionar PDF – ASOs", type=["pdf"], key="up_aso_extrator"
