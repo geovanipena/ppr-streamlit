@@ -1288,41 +1288,40 @@ with tabs[5]:
 
                 upload_pdfs(chave, f"Selecionar PDF(s) – {label}")
 
-    # ── ASO – upload e extração automática ────────────────────────────────────
-    st.divider()
-    sec("🩺 ASO – Atestados de Saúde Ocupacional")
-    st.info(
-        "Faça upload de um único PDF consolidando os ASOs de todos os profissionais. "
-        "Clique em **Extrair e preencher tabela** para usar IA e preencher automaticamente "
-        "a tabela na aba **Pessoal › ASOs**."
-    )
-
-    aso_up = st.file_uploader(
-        "PDF com ASOs dos profissionais", type=["pdf"], key="up_aso_extrator"
-    )
-    if aso_up:
-        st.caption(f"Arquivo selecionado: {aso_up.name}")
-        if st.button("🤖 Extrair e preencher tabela", type="primary", key="btn_extrair_asos"):
-            with st.status("Extraindo dados dos ASOs…", expanded=True) as status_aso:
-                try:
-                    st.write("📖 Lendo o PDF…")
-                    pdf_bytes = aso_up.read()
-                    st.write("🤖 Consultando IA para identificar os registros…")
-                    registros = extrair_asos_do_pdf(pdf_bytes)
-                    st.write(f"✅ {len(registros)} ASO(s) identificado(s). Preenchendo tabela…")
-                    # Mescla: mantém registros existentes não duplicados + novos
-                    existentes = {r["nome"]: r for r in d.get("asos", [])}
-                    for r in registros:
-                        existentes[r["nome"]] = r
-                    d["asos"] = list(existentes.values())
-                    status_aso.update(label=f"✅ {len(registros)} ASO(s) extraído(s) com sucesso!", state="complete")
-                    st.rerun()
-                except Exception as e:
-                    status_aso.update(label="❌ Erro na extração", state="error")
-                    st.error(f"Falha ao extrair ASOs: {e}")
-
-    if d.get("asos"):
-        st.success(f"✅ Tabela de ASOs possui {len(d['asos'])} registro(s). Veja na aba **Pessoal › ASOs**.")
+    # ── ASO no mesmo grid ─────────────────────────────────────────────────────
+    # secoes_pdf tem 12 itens (índices 0-11); índice 12 é par → coluna c1
+    n_asos = len(d.get("asos", []))
+    icone_aso  = "✅" if n_asos > 0 else "📁"
+    status_aso_txt = f"{n_asos} ASO(s) extraído(s)" if n_asos > 0 else "vazio"
+    with c1:
+        with st.expander(f"{icone_aso} ASO – Atestados de Saúde Ocupacional — {status_aso_txt}"):
+            st.caption("Faça upload de um PDF único consolidando todos os ASOs e clique em **Extrair**.")
+            aso_up = st.file_uploader(
+                "Selecionar PDF – ASOs", type=["pdf"], key="up_aso_extrator"
+            )
+            if aso_up:
+                if st.button("🤖 Extrair e preencher tabela", type="primary", key="btn_extrair_asos"):
+                    with st.status("Extraindo dados dos ASOs…", expanded=True) as aso_status:
+                        try:
+                            st.write("📖 Lendo o PDF…")
+                            pdf_bytes = aso_up.read()
+                            st.write("🤖 Consultando IA para identificar os registros…")
+                            registros = extrair_asos_do_pdf(pdf_bytes)
+                            st.write(f"✅ {len(registros)} ASO(s) identificado(s). Preenchendo tabela…")
+                            existentes = {r["nome"]: r for r in d.get("asos", [])}
+                            for r in registros:
+                                existentes[r["nome"]] = r
+                            d["asos"] = list(existentes.values())
+                            aso_status.update(
+                                label=f"✅ {len(registros)} ASO(s) extraído(s) com sucesso!",
+                                state="complete"
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            aso_status.update(label="❌ Erro na extração", state="error")
+                            st.error(f"Falha ao extrair ASOs: {e}")
+            if n_asos > 0:
+                st.success(f"{n_asos} registro(s) na tabela. Veja na aba **Pessoal › ASOs**.")
 
     # ── Logo da Instituição ───────────────────────────────────────────────────
     sec("Logo da Instituição")
