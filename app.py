@@ -687,6 +687,50 @@ def upload_pdfs(chave_pdfs: str, label: str):
             st.caption("Arquivos carregados: " + " · ".join(arqs))
 
 
+def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
+    """Extrai registros de ASO de um PDF usando pypdf + Claude."""
+    import io, json, re
+    from pypdf import PdfReader
+    import anthropic
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    texto = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    client = anthropic.Anthropic()
+    msg = client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=4096,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Analise o texto abaixo extraído de um arquivo PDF contendo Atestados de Saúde "
+                "Ocupacional (ASO) de profissionais de saúde. Para cada profissional encontrado, "
+                "retorne uma lista JSON com objetos contendo:\n"
+                '  - "nome": nome completo do profissional\n'
+                '  - "ultimo": data do último ASO no formato DD/MM/AAAA\n'
+                '  - "validade": data de validade do ASO no formato DD/MM/AAAA\n\n'
+                "Retorne APENAS o JSON, sem texto adicional. Exemplo:\n"
+                '[{"nome": "João Silva", "ultimo": "10/01/2024", "validade": "10/01/2025"}]\n\n'
+                f"TEXTO DO PDF:\n{texto[:12000]}"
+            )
+        }]
+    )
+    raw = msg.content[0].text.strip()
+    # Extrai JSON mesmo se houver texto extra ao redor
+    match = re.search(r"\[.*\]", raw, re.DOTALL)
+    if match:
+        raw = match.group(0)
+    registros = json.loads(raw)
+    return [
+        {
+            "nome":      str(r.get("nome", "")).strip(),
+            "ultimo":    str(r.get("ultimo", "")).strip(),
+            "validade":  str(r.get("validade", "")).strip(),
+        }
+        for r in registros if isinstance(r, dict)
+    ]
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1244,6 +1288,43 @@ with tabs[5]:
 
                 upload_pdfs(chave, f"Selecionar PDF(s) – {label}")
 
+    # ── ASO – upload e extração automática ────────────────────────────────────
+    st.divider()
+    sec("🩺 ASO – Atestados de Saúde Ocupacional")
+    st.info(
+        "Faça upload de um único PDF consolidando os ASOs de todos os profissionais. "
+        "Clique em **Extrair e preencher tabela** para usar IA e preencher automaticamente "
+        "a tabela na aba **Pessoal › ASOs**."
+    )
+
+    aso_up = st.file_uploader(
+        "PDF com ASOs dos profissionais", type=["pdf"], key="up_aso_extrator"
+    )
+    if aso_up:
+        st.caption(f"Arquivo selecionado: {aso_up.name}")
+        if st.button("🤖 Extrair e preencher tabela", type="primary", key="btn_extrair_asos"):
+            with st.status("Extraindo dados dos ASOs…", expanded=True) as status_aso:
+                try:
+                    st.write("📖 Lendo o PDF…")
+                    pdf_bytes = aso_up.read()
+                    st.write("🤖 Consultando IA para identificar os registros…")
+                    registros = extrair_asos_do_pdf(pdf_bytes)
+                    st.write(f"✅ {len(registros)} ASO(s) identificado(s). Preenchendo tabela…")
+                    # Mescla: mantém registros existentes não duplicados + novos
+                    existentes = {r["nome"]: r for r in d.get("asos", [])}
+                    for r in registros:
+                        existentes[r["nome"]] = r
+                    d["asos"] = list(existentes.values())
+                    status_aso.update(label=f"✅ {len(registros)} ASO(s) extraído(s) com sucesso!", state="complete")
+                    st.rerun()
+                except Exception as e:
+                    status_aso.update(label="❌ Erro na extração", state="error")
+                    st.error(f"Falha ao extrair ASOs: {e}")
+
+    if d.get("asos"):
+        st.success(f"✅ Tabela de ASOs possui {len(d['asos'])} registro(s). Veja na aba **Pessoal › ASOs**.")
+
+    # ── Logo da Instituição ───────────────────────────────────────────────────
     sec("Logo da Instituição")
     logo_up = st.file_uploader("Imagem do logo (PNG/JPG)", type=["png","jpg","jpeg"])
     if logo_up:
