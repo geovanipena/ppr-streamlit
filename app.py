@@ -817,35 +817,6 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown('<div style="font-size:0.7rem; color:#64748B; text-transform:uppercase; letter-spacing:0.08em; font-weight:600; padding:4px 0;">Ações</div>', unsafe_allow_html=True)
-
-    # Import
-    arqs_imp = st.file_uploader(
-        "📂 Importar JSON(s)",
-        type=["json", "txt"],
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-        key="import_json",
-        help="1 arquivo unificado (novo) OU arquivos separados do formato antigo.",
-    )
-    if arqs_imp:
-        try:
-            novo = importar_jsons(arqs_imp)
-            novo["_pdfs_bytes"] = d.get("_pdfs_bytes", {})
-            novo["_logo_bytes"] = d.get("_logo_bytes")
-            keys_preservar = {"dados", "sv", "hash_salvo"}
-            for k in list(st.session_state.keys()):
-                if k not in keys_preservar:
-                    del st.session_state[k]
-            st.session_state.dados = novo
-            st.session_state.sv += 1
-            st.session_state.hash_salvo = _hash_dados(novo)
-            nomes = ", ".join(a.name for a in arqs_imp)
-            st.success(f"✅ {nomes}")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao importar: {e}")
-
     # Export
     exportar_d = deepcopy(d)
     exportar_d.pop("_pdfs_bytes", None)
@@ -866,16 +837,6 @@ with st.sidebar:
         st.session_state.ultima_exportacao = datetime.now().strftime("%H:%M")
     if st.session_state.ultima_exportacao:
         st.caption(f"Última exportação: {st.session_state.ultima_exportacao}")
-
-    if st.button("🆕 Novo Projeto", type="secondary", use_container_width=True):
-        keys_preservar = {"sv"}
-        for k in list(st.session_state.keys()):
-            if k not in keys_preservar:
-                del st.session_state[k]
-        st.session_state.dados = dados_padrao()
-        st.session_state.sv += 1
-        st.session_state.hash_salvo = ""
-        st.rerun()
 
     st.markdown("---")
 
@@ -967,13 +928,32 @@ if not st.session_state.onboarding_done and not d["instalacao"].get("nome"):
                 Carregar Projeto
             </div>
             <div style="font-size:0.82rem; color:#15803D;">
-                Importe um JSON salvo anteriormente
+                Importe um JSON ou TXT salvo anteriormente
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Carregar arquivo JSON", use_container_width=True):
-            st.session_state.onboarding_done = True
-            st.info("Use o campo **📂 Importar JSON(s)** na barra lateral para carregar seu projeto.")
+        arqs_ob = st.file_uploader(
+            "Selecionar arquivo(s)",
+            type=["json", "txt"],
+            accept_multiple_files=True,
+            key="import_json_onboarding",
+            help="1 arquivo unificado (novo formato) OU arquivos separados do formato antigo.",
+        )
+        if arqs_ob:
+            try:
+                novo = importar_jsons(arqs_ob)
+                novo["_pdfs_bytes"] = {}
+                novo["_logo_bytes"] = None
+                for k in list(st.session_state.keys()):
+                    if k not in {"sv"}:
+                        del st.session_state[k]
+                st.session_state.dados = novo
+                st.session_state.sv += 1
+                st.session_state.hash_salvo = _hash_dados(novo)
+                st.session_state.onboarding_done = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao importar: {e}")
 
     st.stop()
 
