@@ -644,7 +644,7 @@ def avisos_tab(checks: list[dict]):
 #  HELPERS PARA TABELAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
+def tabela_editavel(chave: str, colunas: list, altura: int = None) -> list:
     col_cfg = {c[0]: st.column_config.TextColumn(c[1]) for c in colunas}
     df_ini = pd.DataFrame(d.get(chave, []) or [], columns=[c[0] for c in colunas])
     for c in colunas:
@@ -652,12 +652,16 @@ def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
             df_ini[c[0]] = ""
     df_ini = df_ini[[c[0] for c in colunas]]
 
+    # Altura dinâmica: mostra todas as linhas sem rolagem (38px/linha + 45px header/footer)
+    _n = max(len(df_ini), 1)
+    _h = altura if altura else max(80, 45 + 38 * (_n + 1))
+
     df_edit = st.data_editor(
         df_ini,
         column_config=col_cfg,
         num_rows="dynamic",
         width='stretch',
-        height=altura,
+        height=_h,
         key=f"editor_{chave}_{sv}",
     )
     rows = df_edit.to_dict("records")
@@ -667,12 +671,18 @@ def tabela_editavel(chave: str, colunas: list, altura: int = 250) -> list:
 
 
 def bloco_resp(titulo: str, chave: str, campos: list):
-    with st.expander(titulo, expanded=False):
-        val = d.get(chave, {})
-        cols = st.columns(len(campos))
-        for i, (k, lbl) in enumerate(campos):
-            val[k] = cols[i].text_input(lbl, val.get(k, ""), key=f"{chave}_{k}_{sv}")
-        d[chave] = val
+    st.markdown(
+        f"<div style='font-size:0.85rem;font-weight:600;color:#1E3A5F;"
+        f"padding:4px 0 6px 0;border-bottom:1px solid #E2E8F0;margin-bottom:8px;'>"
+        f"👤 {titulo}</div>",
+        unsafe_allow_html=True,
+    )
+    val = d.get(chave, {})
+    cols = st.columns(len(campos))
+    for i, (k, lbl) in enumerate(campos):
+        val[k] = cols[i].text_input(lbl, val.get(k, ""), key=f"{chave}_{k}_{sv}")
+    d[chave] = val
+    st.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -682,9 +692,11 @@ def bloco_resp(titulo: str, chave: str, campos: list):
 def upload_pdfs(chave_pdfs: str, label: str, tipos: list = None):
     if tipos is None:
         tipos = ["pdf"]
+    # key inclui os tipos aceitos para evitar conflito de estado de sessão
+    _tipo_key = "_".join(sorted(tipos))
     uploaded = st.file_uploader(
         label, type=tipos, accept_multiple_files=True,
-        key=f"up_{chave_pdfs}"
+        key=f"up_{chave_pdfs}_{_tipo_key}"
     )
     if uploaded:
         if "_pdfs_bytes" not in d:
@@ -1065,7 +1077,7 @@ with tabs[1]:
             [("nome","Nome"),("rt","CNEN RT"),("ra","CNEN RA")])
 
         sec("Responsável Técnico (RT)")
-        bloco_resp("Responsável Técnico", "responsavel_tecnico",
+        bloco_resp("RT Titular", "responsavel_tecnico",
             [("nome","Nome"),("crm","CRM"),("cb","CB")])
         bloco_resp("Substituto do RT", "substituto_rt",
             [("nome","Nome"),("crm","CRM"),("cb","CB")])
