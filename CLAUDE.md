@@ -38,6 +38,11 @@ When building or modifying any UI element in this Streamlit app:
 - **Feedback at every action** — loaders (`st.status`), success/warning/error banners, and metric cards keep the user informed.
 - **Mobile-aware** — `st.columns` ratios and font sizes should degrade gracefully on narrow viewports.
 
+## Workflow Skills
+
+- **`verify`** — after any UI change, run the app and confirm the feature works before reporting done. Especially important for Streamlit rerun/session-state bugs that only appear at runtime.
+- **`security-review`** — before any commit that touches auth, secrets, file upload, or data export: check for exposed `ANTHROPIC_API_KEY`, unsanitized uploads, sensitive data leaking into logs or session state.
+
 ## Project Context
 
 - **Stack:** Python / Streamlit, pandas, reportlab, pypdf, anthropic SDK

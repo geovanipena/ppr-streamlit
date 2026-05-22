@@ -545,6 +545,10 @@ if "sv" not in st.session_state:
     st.session_state.sv = 0
 if "hash_salvo" not in st.session_state:
     st.session_state.hash_salvo = ""
+if "onboarding_done" not in st.session_state:
+    st.session_state.onboarding_done = False
+if "ultima_exportacao" not in st.session_state:
+    st.session_state.ultima_exportacao = ""
 
 d = st.session_state.dados
 sv = st.session_state.sv
@@ -596,6 +600,15 @@ def calcular_progresso(dados: dict) -> tuple:
 
 def erros_criticos(itens: list) -> list:
     return [i for i in itens if i["critico"] and not i["ok"]]
+
+
+def _status_tab(subset: list) -> str:
+    """🟢 tudo ok · 🔴 crítico faltando · 🟡 apenas opcionais faltando."""
+    if all(i["ok"] for i in subset):
+        return "🟢"
+    if any(not i["ok"] and i["critico"] for i in subset):
+        return "🔴"
+    return "🟡"
 
 
 def avisos_tab(checks: list[dict]):
@@ -771,6 +784,30 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Progresso por aba ─────────────────────────────────────────────────────
+    _itens = itens_prog  # já calculado acima
+    _pdfs_imp_sb = d.get("pdfs", {})
+    _pdfs_up_sb  = d.get("_pdfs_bytes", {})
+    def _pdf_ok_sb(s):
+        return (any(v.get("chave_secao")==s for v in _pdfs_up_sb.values()) or
+                bool([p for p in _pdfs_imp_sb.get(s,[]) if p]))
+    _b_pdf = "🟢" if all(_pdf_ok_sb(s) for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra"]) else "🔴"
+    _tabs_sb = [
+        (_status_tab(_itens[0:6]),   "Instalação"),
+        (_status_tab(_itens[6:14]),  "Pessoal"),
+        (_status_tab(_itens[14:17]), "Equipamentos"),
+        (_status_tab(_itens[17:21]), "Garantia Qualidade"),
+        (_status_tab(_itens[21:]),   "Textos"),
+        (_b_pdf,                     "Arquivos PDFs"),
+    ]
+    rows = "".join(
+        f'<div style="display:flex;justify-content:space-between;align-items:center;'
+        f'padding:3px 0;font-size:0.73rem;color:#CBD5E1;">'
+        f'<span>{label}</span><span>{icon}</span></div>'
+        for icon, label in _tabs_sb
+    )
+    st.markdown(f'<div style="padding:4px 0 8px;">{rows}</div>', unsafe_allow_html=True)
+
     if dados_modificados:
         st.markdown("""
         <div style="background:rgba(250,204,21,0.15); border:1px solid rgba(250,204,21,0.4);
@@ -815,14 +852,20 @@ with st.sidebar:
     exportar_d.pop("_logo_bytes", None)
     json_str = json.dumps(exportar_d, ensure_ascii=False, indent=2)
     nome_arq = (d["instalacao"].get("nome") or "PPR")[:25].replace(" ", "_")
+    _btn_label = "💾 Salvar projeto" if not dados_modificados else "💾 Salvar projeto ⚠️"
     if st.download_button(
-        "💾 Exportar JSON",
+        _btn_label,
         data=json_str.encode("utf-8"),
         file_name=f"PPR_{nome_arq}.json",
         mime="application/json",
         use_container_width=True,
+        type="primary" if dados_modificados else "secondary",
     ):
+        from datetime import datetime
         st.session_state.hash_salvo = hash_atual
+        st.session_state.ultima_exportacao = datetime.now().strftime("%H:%M")
+    if st.session_state.ultima_exportacao:
+        st.caption(f"Última exportação: {st.session_state.ultima_exportacao}")
 
     if st.button("🆕 Novo Projeto", type="secondary", use_container_width=True):
         keys_preservar = {"sv"}
@@ -883,17 +926,81 @@ st.markdown(f"""
 
 st.divider()
 
+# ── Onboarding ────────────────────────────────────────────────────────────────
+if not st.session_state.onboarding_done and not d["instalacao"].get("nome"):
+    st.markdown("""
+    <div style="max-width:600px; margin:32px auto; text-align:center;">
+        <div style="font-size:3rem; margin-bottom:12px;">☢️</div>
+        <h2 style="font-size:1.6rem; font-weight:800; color:#1E3A5F; margin-bottom:6px;">
+            Bem-vindo ao Gerador de PPR
+        </h2>
+        <p style="color:#64748B; font-size:0.95rem; margin-bottom:32px;">
+            Plano de Proteção Radiológica · Física Médica / Radioterapia
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_novo, col_carregar = st.columns(2, gap="large")
+    with col_novo:
+        st.markdown("""
+        <div style="background:#F0F9FF; border:2px solid #BAE6FD; border-radius:16px;
+                    padding:28px 24px; text-align:center; min-height:160px;">
+            <div style="font-size:2.2rem;">🆕</div>
+            <div style="font-weight:700; font-size:1.05rem; color:#0C4A6E; margin:10px 0 6px;">
+                Novo Projeto
+            </div>
+            <div style="font-size:0.82rem; color:#0369A1;">
+                Preencha os dados a partir do zero
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Começar projeto novo", use_container_width=True, type="primary"):
+            st.session_state.onboarding_done = True
+            st.rerun()
+
+    with col_carregar:
+        st.markdown("""
+        <div style="background:#F0FDF4; border:2px solid #BBF7D0; border-radius:16px;
+                    padding:28px 24px; text-align:center; min-height:160px;">
+            <div style="font-size:2.2rem;">📂</div>
+            <div style="font-weight:700; font-size:1.05rem; color:#14532D; margin:10px 0 6px;">
+                Carregar Projeto
+            </div>
+            <div style="font-size:0.82rem; color:#15803D;">
+                Importe um JSON salvo anteriormente
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Carregar arquivo JSON", use_container_width=True):
+            st.session_state.onboarding_done = True
+            st.info("Use o campo **📂 Importar JSON(s)** na barra lateral para carregar seu projeto.")
+
+    st.stop()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TABS PRINCIPAIS
 # ═══════════════════════════════════════════════════════════════════════════════
+# Badges por aba (reutiliza itens_prog já calculado)
+_pdfs_imp_tb = d.get("pdfs", {})
+_pdfs_up_tb  = d.get("_pdfs_bytes", {})
+def _pdf_ok_tb(s):
+    return (any(v.get("chave_secao")==s for v in _pdfs_up_tb.values()) or
+            bool([p for p in _pdfs_imp_tb.get(s,[]) if p]))
+_b = [
+    _status_tab(itens_prog[0:6]),
+    _status_tab(itens_prog[6:14]),
+    _status_tab(itens_prog[14:17]),
+    _status_tab(itens_prog[17:21]),
+    _status_tab(itens_prog[21:]),
+    "🟢" if all(_pdf_ok_tb(s) for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra"]) else "🔴",
+]
 tabs = st.tabs([
-    "🏥 Instalação",
-    "👥 Pessoal",
-    "⚙️ Equipamentos",
-    "✅ Garantia da Qualidade",
-    "📝 Textos",
-    "🗂️ Arquivos PDFs",
+    f"🏥 Instalação {_b[0]}",
+    f"👥 Pessoal {_b[1]}",
+    f"⚙️ Equipamentos {_b[2]}",
+    f"✅ Garantia da Qualidade {_b[3]}",
+    f"📝 Textos {_b[4]}",
+    f"🗂️ Arquivos PDFs {_b[5]}",
     "📑 Gerar PDF",
 ])
 
