@@ -3,7 +3,7 @@ PPR Web – Gerador de Plano de Proteção Radiológica
 Versão Streamlit  |  Física Médica / Radioterapia
 """
 import streamlit as st
-import json, io, base64, tempfile, os, hashlib
+import json, io, base64, tempfile, os, hashlib, datetime
 from copy import deepcopy
 import pandas as pd
 
@@ -679,9 +679,11 @@ def bloco_resp(titulo: str, chave: str, campos: list):
 #  UPLOAD DE PDFs
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def upload_pdfs(chave_pdfs: str, label: str):
+def upload_pdfs(chave_pdfs: str, label: str, tipos: list = None):
+    if tipos is None:
+        tipos = ["pdf"]
     uploaded = st.file_uploader(
-        label, type=["pdf"], accept_multiple_files=True,
+        label, type=tipos, accept_multiple_files=True,
         key=f"up_{chave_pdfs}"
     )
     if uploaded:
@@ -980,7 +982,7 @@ tabs = st.tabs([
     f"⚙️ Equipamentos {_b[2]}",
     f"✅ Garantia da Qualidade {_b[3]}",
     f"📝 Textos {_b[4]}",
-    f"🗂️ Arquivos PDFs {_b[5]}",
+    f"🗂️ Arquivos {_b[5]}",
     "📑 Gerar PDF",
 ])
 
@@ -997,7 +999,6 @@ with tabs[0]:
         {"label": "Endereço completo",  "ok": all(inst.get(k) for k in ["rua","cidade","uf","cep"]), "critico": False},
         {"label": "Grupo CNEN",         "ok": bool(inst.get("grupo")),          "critico": True},
         {"label": "Objetivo",           "ok": bool(inst.get("objetivo")),       "critico": False},
-        {"label": "Cidade/Mês/Ano (documento)", "ok": all(inst.get(k) for k in ["cidade_data","mes","ano"]), "critico": False},
     ])
     sec("Identificação da Instituição")
     c1, c2 = st.columns([1, 1])
@@ -1022,11 +1023,13 @@ with tabs[0]:
         inst["subgrupo"] = b.text_input("Subgrupo", inst.get("subgrupo",""), key=f"inst_subgrupo_{sv}")
         inst["instituicao"] = st.text_input("Cabeçalho (instituição)", inst.get("instituicao",""), key=f"inst_instituicao_{sv}")
 
-    sec("Dados do Documento")
-    a, b, c3 = st.columns(3)
-    inst["cidade_data"] = a.text_input("Cidade (rodapé)", inst.get("cidade_data",""), key=f"inst_cidade_data_{sv}")
-    inst["mes"]         = b.text_input("Mês", inst.get("mes",""), key=f"inst_mes_{sv}")
-    inst["ano"]         = c3.text_input("Ano", inst.get("ano",""), key=f"inst_ano_{sv}")
+    # Preenche automaticamente cidade, mês e ano do documento a partir da instalação
+    _MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                 "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+    _hoje = datetime.date.today()
+    inst["cidade_data"] = inst.get("cidade") or ""
+    inst["mes"]         = _MESES_PT[_hoje.month - 1]
+    inst["ano"]         = str(_hoje.year)
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -1105,6 +1108,29 @@ with tabs[1]:
         sec("ASOs – Atestados de Saúde Ocupacional")
         tabela_editavel("asos",
             [("nome","IOE"),("ultimo","Último ASO"),("validade","Validade")])
+
+        # Validação: IOEs cadastrados × ASOs (exclui Responsáveis/titulares)
+        _todos_ioes: set = set()
+        for _campo in ["equipes_medicos","equipes_fisicos","equipes_tecnicos",
+                       "equipes_dosimetristas","equipes_enfermagem","equipes_demais"]:
+            for _p in d.get(_campo, []):
+                _n = (_p.get("nome") or "").strip()
+                if _n:
+                    _todos_ioes.add(_n)
+        if _todos_ioes:
+            sec("Validação IOEs × ASOs")
+            _nomes_aso = {(r.get("nome") or "").strip() for r in d.get("asos", [])}
+            _com_aso = _todos_ioes & _nomes_aso
+            _sem_aso = _todos_ioes - _nomes_aso
+            _c1, _c2 = st.columns(2)
+            _c1.metric("IOEs com ASO ✅", len(_com_aso))
+            _c2.metric("IOEs sem ASO ⚠️", len(_sem_aso))
+            if _sem_aso:
+                st.warning("**IOEs sem ASO cadastrado:**")
+                for _nome in sorted(_sem_aso):
+                    st.markdown(f"• {_nome}")
+            else:
+                st.success("✅ Todos os IOEs possuem ASO cadastrado!")
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -1281,7 +1307,7 @@ with tabs[4]:
 
 
 # ───────────────────────────────────────────────────────────────────────────────
-#  TAB 6 – ARQUIVOS PDFs
+#  TAB 6 – ARQUIVOS
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[5]:
     pdfs_importados = d.get("pdfs", {})
@@ -1317,7 +1343,7 @@ with tabs[5]:
         st.markdown(f"""
         <div class="metric-card">
             <div class="m-value" style="color:#22C55E;">{total_uploaded}</div>
-            <div class="m-label">⬆️ PDFs carregados</div>
+            <div class="m-label">⬆️ Arquivos carregados</div>
         </div>
         """, unsafe_allow_html=True)
     with m3:
@@ -1383,7 +1409,10 @@ with tabs[5]:
                         st.caption(f"  📄 {nome_arquivo}")
                     st.markdown("**⬆️ Faça upload dos arquivos acima:**")
 
-                upload_pdfs(chave, f"Selecionar PDF(s) – {label}")
+                _aceita_img = chave in ("gerencia_rejeitos", "procedimentos_emergencia")
+                _tipos_up = ["pdf", "png", "jpg", "jpeg"] if _aceita_img else None
+                _lbl_up = f"Selecionar arquivo(s) – {label}" if _aceita_img else f"Selecionar PDF(s) – {label}"
+                upload_pdfs(chave, _lbl_up, tipos=_tipos_up)
 
     # ── ASO no mesmo grid ─────────────────────────────────────────────────────
     # secoes_pdf tem 12 itens (índices 0-11); índice 12 é par → coluna c1
@@ -1555,21 +1584,46 @@ with tabs[6]:
                     pdf_bytes = gerar_pdf_bytes(d)
                     st.write("✅ Documento finalizado!")
                     status.update(label="✅ PPR gerado com sucesso!", state="complete", expanded=False)
-
                 nome_pdf = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
-                st.download_button(
-                    label="⬇️ Baixar PPR.pdf",
-                    data=pdf_bytes,
-                    file_name=f"PPR_{nome_pdf}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
+                st.session_state["_pdf_gerado"] = {"bytes": pdf_bytes, "nome": nome_pdf}
             except ImportError:
                 st.error("❌ Módulo ppr_pdf_web não encontrado.")
             except Exception as e:
                 st.error(f"❌ Erro ao gerar PDF: {e}")
                 st.exception(e)
 
+        if st.session_state.get("_pdf_gerado"):
+            _pdf_info = st.session_state["_pdf_gerado"]
+            _pdf_b    = _pdf_info["bytes"]
+            _nome_p   = _pdf_info["nome"]
+
+            st.success("✅ PPR pronto para download!")
+            st.download_button(
+                label="⬇️ Baixar PPR.pdf",
+                data=_pdf_b,
+                file_name=f"PPR_{_nome_p}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+            st.divider()
+            sec("☁️ Salvar na Nuvem")
+            st.markdown(
+                "<div style='background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;"
+                "padding:8px 12px;font-size:0.82rem;color:#0369A1;margin-bottom:10px;'>"
+                "💡 Baixe o PDF acima e faça upload no serviço desejado, ou abra o Gmail para enviar por e-mail."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            _gc1, _gc2, _gc3 = st.columns(3)
+            with _gc1:
+                _mailto = f"mailto:?subject=PPR+{_nome_p}&body=Segue+o+Plano+de+Proteção+Radiológica+em+anexo."
+                st.link_button("📧 Gmail / E-mail", _mailto, use_container_width=True)
+            with _gc2:
+                st.link_button("📁 Google Drive", "https://drive.google.com", use_container_width=True)
+            with _gc3:
+                st.link_button("☁️ OneDrive", "https://onedrive.live.com", use_container_width=True)
+
         st.caption(
-            "PDFs enviados na aba 'Arquivos PDFs' serão incorporados automaticamente ao documento final."
+            "Arquivos enviados na aba 'Arquivos' serão incorporados automaticamente ao documento final."
         )
