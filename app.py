@@ -1200,9 +1200,14 @@ with tabs[5]:
     pdfs_importados = d.get("pdfs", {})
     pdfs_bytes_map_check = d.get("_pdfs_bytes", {})
     _secoes_obrig = ["autorizacao_funcionamento", "calculo_blindagem", "sevrra"]
+    def _pdf_ok(s):
+        # OK se foi feito upload OU se já existe caminho vinculado no JSON do projeto
+        uploaded = any(v.get("chave_secao") == s for v in pdfs_bytes_map_check.values())
+        vinculado = bool([p for p in pdfs_importados.get(s, []) if p])
+        return uploaded or vinculado
     avisos_tab([
         {"label": f"PDF – {s.replace('_',' ').title()}",
-         "ok": any(v.get("chave_secao") == s for v in pdfs_bytes_map_check.values()),
+         "ok": _pdf_ok(s),
          "critico": s in _secoes_obrig}
         for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra",
                   "levantamento_radiometrico","auditoria","contrato_monitoracao"]
@@ -1296,21 +1301,22 @@ with tabs[5]:
     # ── ASO no mesmo grid ─────────────────────────────────────────────────────
     # secoes_pdf tem 12 itens (índices 0-11); índice 12 é par → coluna c1
     n_asos = len(d.get("asos", []))
-    icone_aso  = "✅" if n_asos > 0 else "📁"
+    icone_aso     = "✅" if n_asos > 0 else "📁"
     status_aso_txt = f"{n_asos} ASO(s) extraído(s)" if n_asos > 0 else "vazio"
-    # Mantém expander aberto se há arquivo selecionado (session state do file_uploader)
-    _aso_tem_arquivo = st.session_state.get("up_aso_extrator") is not None
     with c1:
         with st.expander(
             f"{icone_aso} ASO – Atestados de Saúde Ocupacional — {status_aso_txt}",
-            expanded=_aso_tem_arquivo,
+            expanded=True,
         ):
             st.caption("Faça upload de um PDF único consolidando todos os ASOs e clique em **Extrair**.")
             aso_up = st.file_uploader(
                 "Selecionar PDF – ASOs", type=["pdf"], key="up_aso_extrator"
             )
-            if aso_up:
-                if st.button("🤖 Extrair e preencher tabela", type="primary", key="btn_extrair_asos"):
+            # Botão sempre visível; valida presença do arquivo ao clicar
+            if st.button("🤖 Extrair e preencher tabela", type="primary", key="btn_extrair_asos"):
+                if not aso_up:
+                    st.warning("Selecione o PDF dos ASOs antes de extrair.")
+                else:
                     with st.status("Extraindo dados dos ASOs…", expanded=True) as aso_status:
                         try:
                             st.write("📖 Lendo o PDF…")
