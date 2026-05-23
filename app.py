@@ -657,7 +657,7 @@ def tabela_editavel(chave: str, colunas: list, altura: int = None, sort_by: str 
             df_ini[c[0]] = ""
     df_ini = df_ini[[c[0] for c in colunas]]
     # Garante dtype string em todas as colunas (NaN de colunas novas causaria TypeError no TextColumn)
-    df_ini = df_ini.fillna("").astype(str).replace("nan", "")
+    df_ini = df_ini.fillna("").astype(str).replace({"nan": "", "None": ""})
     if sort_by and sort_by in df_ini.columns:
         df_ini = df_ini.sort_values(sort_by, key=lambda s: s.str.lower()).reset_index(drop=True)
 
