@@ -443,6 +443,11 @@ def dados_padrao() -> dict:
         "imagens": {"logo":"","classificacao_areas":[],"gerencia_rejeitos":[]},
         "_pdfs_bytes": {},
         "_logo_bytes": None,
+        "vencimentos": {k: {"realizacao":"","vencimento":""} for k in [
+            "autorizacao_funcionamento","levantamento_radiometrico","auditoria",
+            "sevrra","certificados_conjunto_dosimetrico",
+            "certificados_outros","certificados_monitores_area",
+        ]},
     }
 
 
@@ -763,6 +768,68 @@ def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
     ]
 
 
+def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
+    """Extrai datas de realização e vencimento de cada PDF carregado usando Claude."""
+    import re as _re, json as _json, os as _os, io as _io
+    import base64 as _b64
+    from pypdf import PdfReader
+    import anthropic
+
+    _chaves_nome = {
+        "autorizacao_funcionamento":         "Autorização de Funcionamento",
+        "levantamento_radiometrico":         "Levantamento Radiométrico",
+        "auditoria":                         "Auditoria Dosimétrica",
+        "sevrra":                            "SEVRRA",
+        "certificados_conjunto_dosimetrico": "Certificados de Conjuntos Dosimétricos",
+        "certificados_outros":               "Certificados Outros",
+        "certificados_monitores_area":       "Certificados de Monitores de Área",
+    }
+    textos_por_secao: dict = {}
+    for info in pdfs_bytes_map.values():
+        sec_k = info.get("chave_secao", "")
+        if sec_k not in _chaves_nome:
+            continue
+        try:
+            pdf_bytes = _b64.b64decode(info["data"])
+            reader = PdfReader(_io.BytesIO(pdf_bytes))
+            texto = "\n".join(p.extract_text() or "" for p in reader.pages)
+            textos_por_secao.setdefault(sec_k, []).append(texto[:3000])
+        except Exception:
+            pass
+
+    if not textos_por_secao:
+        return {}
+
+    api_key = st.secrets.get("ANTHROPIC_API_KEY") or _os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY não configurada.")
+    client = anthropic.Anthropic(api_key=api_key)
+
+    resultado: dict = {}
+    for sec_k, textos in textos_por_secao.items():
+        nome_doc = _chaves_nome[sec_k]
+        texto_comb = "\n\n---\n\n".join(textos)[:5000]
+        msg = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=256,
+            messages=[{"role": "user", "content": (
+                f"Analise o texto de um documento '{nome_doc}'. "
+                "Extraia a data de realização/emissão e a data de vencimento/validade. "
+                'Responda APENAS com JSON: {"realizacao":"DD/MM/AAAA","vencimento":"DD/MM/AAAA"}. '
+                "Se não encontrar, use string vazia.\n\n"
+                f"Texto:\n{texto_comb}"
+            )}],
+        )
+        raw = msg.content[0].text.strip()
+        m = _re.search(r"\{[^}]+\}", raw, _re.DOTALL)
+        if m:
+            try:
+                resultado[sec_k] = _json.loads(m.group())
+            except Exception:
+                pass
+    return resultado
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -995,6 +1062,7 @@ tabs = st.tabs([
     f"✅ Garantia da Qualidade {_b[3]}",
     f"📝 Textos {_b[4]}",
     f"🗂️ Arquivos {_b[5]}",
+    "📅 Vencimentos",
     "📑 Gerar PDF",
 ])
 
@@ -1181,6 +1249,7 @@ with tabs[2]:
         tabela_editavel("conjunto_dosimetrico", [
             ("obj","Item"),("fabricante","Fabricante"),
             ("modelo","Modelo"),("serie","Nº Série"),
+            ("calibracao","Data Calibração"),("fator","Fator Calibração"),
         ])
 
     with sub[3]:
@@ -1188,6 +1257,7 @@ with tabs[2]:
         tabela_editavel("instrumentos_medicao", [
             ("obj","Item"),("fabricante","Fabricante"),
             ("modelo","Modelo"),("serie","Nº Série"),
+            ("calibracao","Data Calibração"),
         ])
 
     with sub[4]:
@@ -1202,6 +1272,7 @@ with tabs[2]:
         tabela_editavel("monitores_area", [
             ("obj","Item"),("fabricante","Fabricante"),
             ("modelo","Modelo"),("serie","Nº Série"),
+            ("calibracao","Data Calibração"),("fator","Fator Calibração"),
         ])
 
     with sub[6]:
@@ -1493,9 +1564,147 @@ with tabs[5]:
 
 
 # ───────────────────────────────────────────────────────────────────────────────
-#  TAB 7 – GERAR PDF
+#  TAB 7 – VENCIMENTOS
 # ───────────────────────────────────────────────────────────────────────────────
 with tabs[6]:
+    st.subheader("📅 Vencimentos e Prazos")
+
+    venc = d.setdefault("vencimentos", {k: {"realizacao":"","vencimento":""} for k in [
+        "autorizacao_funcionamento","levantamento_radiometrico","auditoria",
+        "sevrra","certificados_conjunto_dosimetrico",
+        "certificados_outros","certificados_monitores_area",
+    ]})
+
+    _docs_venc = [
+        ("autorizacao_funcionamento",         "Autorização de Funcionamento"),
+        ("levantamento_radiometrico",         "Levantamento Radiométrico"),
+        ("auditoria",                         "Auditoria Dosimétrica"),
+        ("sevrra",                            "SEVRRA"),
+        ("certificados_conjunto_dosimetrico", "Certificados – Conj. Dosimétricos"),
+        ("certificados_outros",               "Certificados – Outros"),
+        ("certificados_monitores_area",       "Certificados – Monitores de Área"),
+    ]
+
+    # ── Extração por IA ──────────────────────────────────────────────────────
+    sec("📂 Extrair Datas dos PDFs")
+    _pdfs_disp = len([v for v in d.get("_pdfs_bytes",{}).values()
+                      if v.get("chave_secao") in dict(_docs_venc)])
+    if _pdfs_disp == 0:
+        st.info("Faça upload dos PDFs na aba **Arquivos** para habilitar a extração automática de datas.")
+    else:
+        st.caption(f"{_pdfs_disp} PDF(s) disponível(is) para extração.")
+        if st.button("🤖 Extrair datas dos PDFs carregados", type="primary", key="btn_extrair_venc"):
+            with st.status("Extraindo datas…", expanded=True) as _vst:
+                try:
+                    st.write("🤖 Consultando IA para cada documento…")
+                    _extraido = extrair_vencimentos_dos_pdfs(d.get("_pdfs_bytes",{}))
+                    for k, v in _extraido.items():
+                        venc[k] = v
+                    d["vencimentos"] = venc
+                    _vst.update(label=f"✅ {len(_extraido)} documento(s) processado(s)!", state="complete")
+                    st.rerun()
+                except Exception as _e:
+                    _vst.update(label="❌ Erro na extração", state="error")
+                    st.error(str(_e))
+
+    # ── Tabela editável de documentos ────────────────────────────────────────
+    sec("Documentos – Realização e Vencimento")
+
+    def _parse_br(s: str):
+        import re as _re2
+        m = _re2.match(r"(\d{2})/(\d{2})/(\d{4})", str(s or "").strip())
+        return datetime.date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
+
+    _hoje_v = datetime.date.today()
+
+    def _status_venc(s: str):
+        d_ = _parse_br(s)
+        if not d_:
+            return "—"
+        delta = (d_ - _hoje_v).days
+        if delta < 0:
+            return f"⛔ Vencido há {-delta}d"
+        if delta <= 30:
+            return f"🔴 Vence em {delta}d"
+        if delta <= 90:
+            return f"⚠️ Vence em {delta}d"
+        return f"✅ {delta}d restantes"
+
+    _rows_v = []
+    for _ck, _cn in _docs_venc:
+        _e = venc.get(_ck, {"realizacao":"","vencimento":""})
+        _rows_v.append({"Documento": _cn,
+                        "Realização": _e.get("realizacao",""),
+                        "Vencimento": _e.get("vencimento",""),
+                        "Status": _status_venc(_e.get("vencimento",""))})
+
+    _df_v = pd.DataFrame(_rows_v)
+
+    # Edição de datas (realização + vencimento editáveis; status auto)
+    _df_edit_v = st.data_editor(
+        _df_v[["Documento","Realização","Vencimento"]],
+        column_config={
+            "Documento":   st.column_config.TextColumn("Documento", disabled=True, width="large"),
+            "Realização":  st.column_config.TextColumn("Realização (DD/MM/AAAA)"),
+            "Vencimento":  st.column_config.TextColumn("Vencimento (DD/MM/AAAA)"),
+        },
+        num_rows="fixed",
+        use_container_width=True,
+        key=f"tbl_venc_{sv}",
+    )
+    # Salva edições e exibe status ao lado
+    for _i, (_ck, _cn) in enumerate(_docs_venc):
+        venc[_ck] = {
+            "realizacao": str(_df_edit_v.iloc[_i]["Realização"] or ""),
+            "vencimento": str(_df_edit_v.iloc[_i]["Vencimento"] or ""),
+        }
+    d["vencimentos"] = venc
+
+    # Status summary
+    _status_rows = [{"Documento": r["Documento"], "Status": _status_venc(r["Vencimento"])}
+                    for r in _rows_v]
+    st.dataframe(pd.DataFrame(_status_rows), use_container_width=True, hide_index=True)
+
+    # ── ASOs vencendo primeiro (top 10) ──────────────────────────────────────
+    sec("🩺 ASOs – 10 Próximos Vencimentos")
+
+    _asos_all = d.get("asos", [])
+    if not _asos_all:
+        st.info("Nenhum ASO cadastrado. Preencha em **Pessoal › ASOs**.")
+    else:
+        def _sort_key(r):
+            d_ = _parse_br(r.get("validade",""))
+            return d_ if d_ else datetime.date(9999,12,31)
+
+        _asos_sorted = sorted(_asos_all, key=_sort_key)[:10]
+        _aso_rows = []
+        for _r in _asos_sorted:
+            _vd = _parse_br(_r.get("validade",""))
+            if not _vd:
+                _st = "—"; _bg = ""
+            else:
+                _delta = (_vd - _hoje_v).days
+                if _delta < 0:
+                    _st = f"⛔ Vencido há {-_delta}d"
+                elif _delta <= 30:
+                    _st = f"🔴 Vence em {_delta}d"
+                elif _delta <= 90:
+                    _st = f"⚠️ Vence em {_delta}d"
+                else:
+                    _st = f"✅ {_delta}d"
+            _aso_rows.append({
+                "IOE": _r.get("nome",""),
+                "Último ASO": _r.get("ultimo",""),
+                "Validade": _r.get("validade",""),
+                "Status": _st,
+            })
+        st.dataframe(pd.DataFrame(_aso_rows), use_container_width=True, hide_index=True)
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+#  TAB 8 – GERAR PDF
+# ───────────────────────────────────────────────────────────────────────────────
+with tabs[7]:
     st.subheader("📑 Geração do Plano de Proteção Radiológica")
     inst_v = d["instalacao"]
 
