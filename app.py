@@ -772,6 +772,43 @@ def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
     ]
 
 
+def buscar_vencimento_rt_cnen(numero_rt: str) -> str:
+    """Consulta o vencimento do RT no cadastro público da CNEN."""
+    import requests, re as _re
+
+    _url  = "https://appasp2019.cnen.gov.br/seguranca/cons-ent-prof/lst-prof-credenciados.asp"
+    _hdrs = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer":         _url + "?OP=RT",
+        "Origin":          "https://appasp2019.cnen.gov.br",
+        "Content-Type":    "application/x-www-form-urlencoded",
+    }
+    sess = requests.Session()
+    sess.get(_url, params={"OP": "RT"}, headers=_hdrs, timeout=15)
+
+    rt_num = _re.sub(r"[^\w]", "", numero_rt.strip())
+    for payload in [
+        {"OP": "RT", "NRRT": rt_num},
+        {"OP": "RT", "NR_RT": rt_num},
+        {"OP": "RT", "NumRT": rt_num},
+        {"OP": "RT", "txtRT": rt_num},
+    ]:
+        resp = sess.post(_url, data=payload, headers=_hdrs, timeout=15)
+        if resp.status_code == 200 and rt_num in resp.text:
+            # Procura data DD/MM/AAAA na mesma linha/célula do número do RT
+            trecho = resp.text[max(0, resp.text.find(rt_num) - 50):resp.text.find(rt_num) + 300]
+            m = _re.search(r"\d{2}/\d{2}/\d{4}", trecho)
+            if m:
+                return m.group(0)
+    return ""
+
+
 def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
     """Extrai datas de realização e vencimento de cada PDF carregado usando Claude."""
     import re as _re, json as _json, os as _os, io as _io
@@ -1169,6 +1206,23 @@ with tabs[1]:
         sec("Equipe de Físicos Médicos")
         tabela_editavel("equipes_fisicos",
             [("nome","Nome"),("rt","RT"),("venc_rt","Venc. RT"),("ra","RA"),("venc_ra","Venc. RA"),("formacao","Formação"),("carga","Carga")], sort_by="nome")
+        if st.button("🔍 Buscar vencimentos RT no CNEN", key=f"btn_cnen_{sv}"):
+            _fisicos = d.get("equipes_fisicos", [])
+            _atualizados = 0
+            with st.spinner("Consultando CNEN..."):
+                for _f in _fisicos:
+                    _rt = (_f.get("rt") or "").strip()
+                    if _rt and not (_f.get("venc_rt") or "").strip():
+                        _venc = buscar_vencimento_rt_cnen(_rt)
+                        if _venc:
+                            _f["venc_rt"] = _venc
+                            _atualizados += 1
+            d["equipes_fisicos"] = _fisicos
+            if _atualizados:
+                st.success(f"{_atualizados} vencimento(s) RT preenchido(s). Salve o projeto para persistir.")
+                st.rerun()
+            else:
+                st.info("Nenhum vencimento RT novo encontrado no CNEN (verifique os números RT cadastrados).")
 
     with sub[3]:
         sec("Equipe de Técnicos em Radioterapia")
