@@ -1375,22 +1375,22 @@ with tabs[5]:
     st.divider()
 
     secoes_pdf = [
-        ("autorizacao_funcionamento",         "Autorização de Funcionamento (CNEN)"),
-        ("calculo_blindagem",                 "Cálculo de Blindagem"),
-        ("levantamento_radiometrico",         "Levantamento Radiométrico"),
-        ("classificacao_areas",               "Classificação de Áreas"),
-        ("sevrra",                            "SEVRRA"),
-        ("auditoria",                         "Auditoria Dosimétrica"),
-        ("certificados_conjunto_dosimetrico", "Certificados – Conjuntos Dosimétricos"),
-        ("certificados_monitores_area",       "Certificados – Monitores de Área"),
-        ("certificados_outros",               "Certificados – Outros"),
-        ("contrato_monitoracao",              "Contrato de Monitoração Individual"),
-        ("procedimentos_emergencia",          "Procedimentos de Emergência"),
-        ("gerencia_rejeitos",                 "Gerência de Rejeitos"),
+        ("autorizacao_funcionamento",         "Autorização de Funcionamento (CNEN)",  ["pdf"]),
+        ("calculo_blindagem",                 "Cálculo de Blindagem",                 ["pdf"]),
+        ("levantamento_radiometrico",         "Levantamento Radiométrico",            ["pdf"]),
+        ("classificacao_areas",               "Classificação de Áreas",               ["pdf"]),
+        ("sevrra",                            "SEVRRA",                               ["pdf"]),
+        ("auditoria",                         "Auditoria Dosimétrica",                ["pdf"]),
+        ("certificados_conjunto_dosimetrico", "Certificados – Conjuntos Dosimétricos",["pdf"]),
+        ("certificados_monitores_area",       "Certificados – Monitores de Área",     ["pdf"]),
+        ("certificados_outros",               "Certificados – Outros",                ["pdf"]),
+        ("contrato_monitoracao",              "Contrato de Monitoração Individual",   ["pdf"]),
+        ("procedimentos_emergencia",          "Procedimentos de Emergência",          ["pdf","png","jpg","jpeg"]),
+        ("gerencia_rejeitos",                 "Gerência de Rejeitos",                 ["pdf","png","jpg","jpeg"]),
     ]
 
     c1, c2 = st.columns(2)
-    for i, (chave, label) in enumerate(secoes_pdf):
+    for i, (chave, label, tipos_sec) in enumerate(secoes_pdf):
         col = c1 if i % 2 == 0 else c2
         with col:
             paths_vinculados = pdfs_importados.get(chave, [])
@@ -1421,10 +1421,8 @@ with tabs[5]:
                         st.caption(f"  📄 {nome_arquivo}")
                     st.markdown("**⬆️ Faça upload dos arquivos acima:**")
 
-                _aceita_img = chave in ("gerencia_rejeitos", "procedimentos_emergencia")
-                _tipos_up = ["pdf", "png", "jpg", "jpeg"] if _aceita_img else None
-                _lbl_up = f"Selecionar arquivo(s) – {label}" if _aceita_img else f"Selecionar PDF(s) – {label}"
-                upload_pdfs(chave, _lbl_up, tipos=_tipos_up)
+                _lbl_up = f"Selecionar arquivo(s) – {label}" if len(tipos_sec) > 1 else f"Selecionar PDF – {label}"
+                upload_pdfs(chave, _lbl_up, tipos=tipos_sec)
 
     # ── ASO no mesmo grid ─────────────────────────────────────────────────────
     # secoes_pdf tem 12 itens (índices 0-11); índice 12 é par → coluna c1
