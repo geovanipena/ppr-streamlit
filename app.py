@@ -1163,7 +1163,7 @@ with tabs[1]:
     with sub[1]:
         sec("Equipe de Radio-Oncologistas")
         tabela_editavel("equipes_medicos",
-            [("nome","Nome"),("crm","CRM"),("cb","CB"),("carga","Carga")], sort_by="nome")
+            [("nome","Nome"),("crm","CRM"),("cb","CB"),("venc_cb","Venc. CB"),("carga","Carga")], sort_by="nome")
 
     with sub[2]:
         sec("Equipe de Físicos Médicos")
