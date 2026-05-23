@@ -649,7 +649,7 @@ def avisos_tab(checks: list[dict]):
 #  HELPERS PARA TABELAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def tabela_editavel(chave: str, colunas: list, altura: int = None) -> list:
+def tabela_editavel(chave: str, colunas: list, altura: int = None, sort_by: str = None) -> list:
     col_cfg = {c[0]: st.column_config.TextColumn(c[1]) for c in colunas}
     df_ini = pd.DataFrame(d.get(chave, []) or [], columns=[c[0] for c in colunas])
     for c in colunas:
@@ -658,6 +658,8 @@ def tabela_editavel(chave: str, colunas: list, altura: int = None) -> list:
     df_ini = df_ini[[c[0] for c in colunas]]
     # Garante dtype string em todas as colunas (NaN de colunas novas causaria TypeError no TextColumn)
     df_ini = df_ini.fillna("").astype(str).replace("nan", "")
+    if sort_by and sort_by in df_ini.columns:
+        df_ini = df_ini.sort_values(sort_by, key=lambda s: s.str.lower()).reset_index(drop=True)
 
     # Altura dinâmica: mostra todas as linhas sem rolagem (38px/linha + 45px header/footer)
     _n = max(len(df_ini), 1)
@@ -1138,7 +1140,7 @@ with tabs[1]:
     with sub[0]:
         sec("Titulares da Instalação")
         tabela_editavel("responsaveis",
-            [("nome","Nome"),("cpf","CPF"),("cargo","Cargo")], altura=180)
+            [("nome","Nome"),("cpf","CPF"),("cargo","Cargo")], altura=180, sort_by="nome")
 
         sec("Supervisor de Radioproteção (SPR)")
         bloco_resp("SPR", "supervisor",
@@ -1159,37 +1161,37 @@ with tabs[1]:
     with sub[1]:
         sec("Equipe de Radio-Oncologistas")
         tabela_editavel("equipes_medicos",
-            [("nome","Nome"),("crm","CRM"),("cb","CB"),("carga","Carga")])
+            [("nome","Nome"),("crm","CRM"),("cb","CB"),("carga","Carga")], sort_by="nome")
 
     with sub[2]:
         sec("Equipe de Físicos Médicos")
         tabela_editavel("equipes_fisicos",
-            [("nome","Nome"),("rt","RT"),("ra","RA"),("formacao","Formação"),("carga","Carga")])
+            [("nome","Nome"),("rt","RT"),("ra","RA"),("formacao","Formação"),("carga","Carga")], sort_by="nome")
 
     with sub[3]:
         sec("Equipe de Técnicos em Radioterapia")
         tabela_editavel("equipes_tecnicos",
-            [("nome","Nome"),("crtr","CRTR"),("carga","Carga")])
+            [("nome","Nome"),("crtr","CRTR"),("carga","Carga")], sort_by="nome")
 
     with sub[4]:
         sec("Equipe de Dosimetristas")
         tabela_editavel("equipes_dosimetristas",
-            [("nome","Nome"),("registro","Registro"),("carga","Carga")])
+            [("nome","Nome"),("registro","Registro"),("carga","Carga")], sort_by="nome")
 
     with sub[5]:
         sec("Equipe de Enfermagem")
         tabela_editavel("equipes_enfermagem",
-            [("nome","Nome"),("coren","COREN"),("carga","Carga")])
+            [("nome","Nome"),("coren","COREN"),("carga","Carga")], sort_by="nome")
 
     with sub[6]:
         sec("Demais IOEs")
         tabela_editavel("equipes_demais",
-            [("nome","Nome"),("cargo","Cargo"),("carga","Carga")])
+            [("nome","Nome"),("cargo","Cargo"),("carga","Carga")], sort_by="nome")
 
     with sub[7]:
         sec("ASOs – Atestados de Saúde Ocupacional")
         tabela_editavel("asos",
-            [("nome","IOE"),("ultimo","Último ASO"),("validade","Validade")])
+            [("nome","IOE"),("ultimo","Último ASO"),("validade","Validade")], sort_by="nome")
 
         # Validação: IOEs cadastrados × ASOs (exclui Responsáveis/titulares)
         _todos_ioes: set = set()
