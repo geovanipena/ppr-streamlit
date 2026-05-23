@@ -917,9 +917,9 @@ with st.sidebar:
         use_container_width=True,
         type="primary" if dados_modificados else "secondary",
     ):
-        from datetime import datetime
+        from datetime import datetime as _dt_cls
         st.session_state.hash_salvo = hash_atual
-        st.session_state.ultima_exportacao = datetime.now().strftime("%H:%M")
+        st.session_state.ultima_exportacao = _dt_cls.now().strftime("%H:%M")
     if st.session_state.ultima_exportacao:
         st.caption(f"Última exportação: {st.session_state.ultima_exportacao}")
 
