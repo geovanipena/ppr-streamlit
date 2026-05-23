@@ -907,7 +907,7 @@ with st.sidebar:
     exportar_d.pop("_pdfs_bytes", None)
     exportar_d.pop("_logo_bytes", None)
     json_str = json.dumps(exportar_d, ensure_ascii=False, indent=2)
-    _nome_inst = (d["instalacao"].get("nome") or "PPR").replace(" ", "_")
+    _nome_inst = (d["instalacao"].get("nome") or "PPR").replace(" ", "-")
     _data_hoje = datetime.date.today().strftime("%d-%m-%Y")
     nome_arq   = f"PPR_{_nome_inst}_{_data_hoje}"
     _btn_label = "💾 Salvar projeto" if not dados_modificados else "💾 Salvar projeto ⚠️"
