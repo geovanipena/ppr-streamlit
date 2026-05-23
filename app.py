@@ -1154,7 +1154,7 @@ with tabs[1]:
 
         sec("Diretor Clínico")
         bloco_resp("Diretor Clínico", "diretor_clinico",
-            [("nome","Nome"),("crm","CRM"),("cb","CB")])
+            [("nome","Nome"),("crm","CRM")])
 
     with sub[1]:
         sec("Equipe de Radio-Oncologistas")
