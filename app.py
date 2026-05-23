@@ -656,6 +656,8 @@ def tabela_editavel(chave: str, colunas: list, altura: int = None) -> list:
         if c[0] not in df_ini.columns:
             df_ini[c[0]] = ""
     df_ini = df_ini[[c[0] for c in colunas]]
+    # Garante dtype string em todas as colunas (NaN de colunas novas causaria TypeError no TextColumn)
+    df_ini = df_ini.fillna("").astype(str).replace("nan", "")
 
     # Altura dinâmica: mostra todas as linhas sem rolagem (38px/linha + 45px header/footer)
     _n = max(len(df_ini), 1)
