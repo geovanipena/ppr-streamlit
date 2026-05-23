@@ -1168,7 +1168,7 @@ with tabs[1]:
     with sub[2]:
         sec("Equipe de Físicos Médicos")
         tabela_editavel("equipes_fisicos",
-            [("nome","Nome"),("rt","RT"),("ra","RA"),("formacao","Formação"),("carga","Carga")], sort_by="nome")
+            [("nome","Nome"),("rt","RT"),("venc_rt","Venc. RT"),("ra","RA"),("venc_ra","Venc. RA"),("formacao","Formação"),("carga","Carga")], sort_by="nome")
 
     with sub[3]:
         sec("Equipe de Técnicos em Radioterapia")
