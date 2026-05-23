@@ -1486,7 +1486,7 @@ with tabs[5]:
                 f"{n_vinc} vinculado(s) — upload pendente" if n_vinc > 0 else "vazio"
             )
 
-            with st.expander(f"{icone} {label} — {status_txt}", expanded=(n_vinc > 0 and n_up == 0)):
+            with st.expander(f"{icone} {label} — {status_txt}", expanded=False):
                 if paths_vinculados:
                     st.markdown("**📋 Arquivos do projeto original:**")
                     for p in paths_vinculados:
