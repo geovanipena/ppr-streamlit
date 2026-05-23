@@ -907,12 +907,14 @@ with st.sidebar:
     exportar_d.pop("_pdfs_bytes", None)
     exportar_d.pop("_logo_bytes", None)
     json_str = json.dumps(exportar_d, ensure_ascii=False, indent=2)
-    nome_arq = (d["instalacao"].get("nome") or "PPR")[:25].replace(" ", "_")
+    _nome_inst = (d["instalacao"].get("nome") or "PPR").replace(" ", "_")
+    _data_hoje = datetime.date.today().strftime("%d-%m-%Y")
+    nome_arq   = f"PPR_{_nome_inst}_{_data_hoje}"
     _btn_label = "💾 Salvar projeto" if not dados_modificados else "💾 Salvar projeto ⚠️"
     if st.download_button(
         _btn_label,
         data=json_str.encode("utf-8"),
-        file_name=f"PPR_{nome_arq}.json",
+        file_name=f"{nome_arq}.json",
         mime="application/json",
         use_container_width=True,
         type="primary" if dados_modificados else "secondary",
