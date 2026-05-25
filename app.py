@@ -772,77 +772,6 @@ def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
     ]
 
 
-def buscar_rt_cnen_por_nome(nome: str) -> dict:
-    """Busca RT e vencimento no cadastro público da CNEN pelo nome do profissional.
-
-    Retorna dict com chaves 'rt' e/ou 'venc_rt' quando encontrados, ou {} se falhar.
-    """
-    import requests, re as _re
-
-    _url  = "https://appasp2019.cnen.gov.br/seguranca/cons-ent-prof/lst-prof-credenciados.asp"
-    _hdrs = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer":         _url + "?OP=RT",
-        "Origin":          "https://appasp2019.cnen.gov.br",
-        "Content-Type":    "application/x-www-form-urlencoded",
-    }
-
-    sess = requests.Session()
-    try:
-        sess.get(_url, params={"OP": "RT"}, headers=_hdrs, timeout=15)
-    except Exception:
-        return {}
-
-    # Tenta sobrenome isolado e nome completo como variações de busca
-    partes = nome.strip().split()
-    buscas = [nome.strip()]
-    if len(partes) > 1:
-        buscas.append(partes[-1])                        # sobrenome
-        buscas.append(f"{partes[0]} {partes[-1]}")       # primeiro + sobrenome
-
-    for nome_busca in buscas:
-        for payload in [
-            {"OP": "RT", "NM_NOME": nome_busca},
-            {"OP": "RT", "NMNOME": nome_busca},
-            {"OP": "RT", "txtNome": nome_busca},
-            {"OP": "RT", "NOME": nome_busca},
-        ]:
-            try:
-                resp = sess.post(_url, data=payload, headers=_hdrs, timeout=15)
-            except Exception:
-                continue
-            if resp.status_code != 200:
-                continue
-
-            html = resp.text
-            # Verifica se o nome aparece na resposta (case-insensitive)
-            pos = html.upper().find(nome_busca.upper())
-            if pos == -1:
-                continue
-
-            # Extrai região ao redor do nome para procurar RT e data
-            regiao = html[max(0, pos - 100):pos + 500]
-
-            resultado: dict = {}
-            m_rt   = _re.search(r"RT[-\s]?(\d{1,5}/\d{4}|\d{3,6})", regiao, _re.IGNORECASE)
-            m_data = _re.search(r"\d{2}/\d{2}/\d{4}", regiao)
-
-            if m_rt:
-                resultado["rt"] = m_rt.group(0).strip()
-            if m_data:
-                resultado["venc_rt"] = m_data.group(0)
-
-            if resultado:
-                return resultado
-
-    return {}
-
 
 def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
     """Extrai datas de realização e vencimento de cada PDF carregado usando Claude."""
@@ -1241,31 +1170,6 @@ with tabs[1]:
         sec("Equipe de Físicos Médicos")
         tabela_editavel("equipes_fisicos",
             [("nome","Nome"),("rt","RT"),("venc_rt","Venc. RT"),("ra","RA"),("venc_ra","Venc. RA"),("formacao","Formação"),("carga","Carga")], sort_by="nome")
-        if st.button("🔍 Buscar RT e Validade no CNEN", key=f"btn_cnen_{sv}"):
-            _fisicos = d.get("equipes_fisicos", [])
-            _atualizados = 0
-            with st.spinner("Consultando CNEN pelo nome..."):
-                for _f in _fisicos:
-                    _nome = (_f.get("nome") or "").strip()
-                    if not _nome:
-                        continue
-                    _falta_rt   = not (_f.get("rt")      or "").strip()
-                    _falta_venc = not (_f.get("venc_rt") or "").strip()
-                    if not (_falta_rt or _falta_venc):
-                        continue
-                    _dados = buscar_rt_cnen_por_nome(_nome)
-                    if _falta_rt   and _dados.get("rt"):
-                        _f["rt"]      = _dados["rt"]
-                        _atualizados += 1
-                    if _falta_venc and _dados.get("venc_rt"):
-                        _f["venc_rt"] = _dados["venc_rt"]
-                        _atualizados += 1
-            d["equipes_fisicos"] = _fisicos
-            if _atualizados:
-                st.success(f"{_atualizados} campo(s) preenchido(s). Salve o projeto para persistir.")
-                st.rerun()
-            else:
-                st.info("Nenhum dado encontrado no CNEN (verifique os nomes cadastrados).")
 
     with sub[3]:
         sec("Equipe de Técnicos em Radioterapia")
