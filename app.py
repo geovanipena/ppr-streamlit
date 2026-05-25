@@ -118,7 +118,7 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 # ── Physics engine ─────────────────────────────────────────────────────────────
 
 def _reff_cm(volume_cc: float) -> float:
-    if not volume_cc or volume_cc <= 0:
+    if volume_cc is None or volume_cc <= 0:
         return float("nan")
     return (3.0 * volume_cc / (4.0 * math.pi)) ** (1.0 / 3.0)
 
@@ -132,20 +132,23 @@ _DGI_TABLE = [
 ]
 
 def _limiares_dgi(tv_cc):
-    if not tv_cc or tv_cc <= 0:
+    if tv_cc is None or tv_cc <= 0:
         return None, None
     for (lo, hi), ideal, minimo in _DGI_TABLE:
         if lo <= tv_cc <= hi:
             return ideal, minimo
-    return (_DGI_TABLE[0][1], _DGI_TABLE[0][2]) if tv_cc < _DGI_TABLE[0][0][0] else \
-           (_DGI_TABLE[-1][1], _DGI_TABLE[-1][2])
+    if tv_cc < _DGI_TABLE[0][0][0]:
+        return _DGI_TABLE[0][1], _DGI_TABLE[0][2]
+    return _DGI_TABLE[-1][1], _DGI_TABLE[-1][2]
 
 def _classificar_dgi(val: float, tv_cc) -> str:
     ideal, minimo = _limiares_dgi(tv_cc)
     if ideal is None or not np.isfinite(val):
         return "N/A"
-    if val >= ideal:   return "EXCELENTE"
-    if val >= minimo:  return "ACEITÁVEL"
+    # normaliza: aceita fração (0–1) ou percentual (0–100)
+    dgi_pct = val * 100.0 if val <= 1.2 else val
+    if dgi_pct >= ideal:   return "EXCELENTE"
+    if dgi_pct >= minimo:  return "ACEITÁVEL"
     return "INSATISFATÓRIO"
 
 
@@ -378,6 +381,8 @@ def Dv_gy(dvh, v_percent):
     except Exception:
         return float("nan")
     doses = np.asarray(doses, float); vols = np.asarray(vols, float)
+    if doses.size == 0 or vols.size == 0:
+        return float("nan")
     if units in ("CM3", "CC", "CM^3"):
         vols_cc = vols
     elif units in ("PERCENT", "RELATIVE"):
@@ -390,12 +395,63 @@ def Dv_gy(dvh, v_percent):
     if np.any(np.diff(doses) < 0):
         idx = np.argsort(doses)
         doses, vols_cc = doses[idx], vols_cc[idx]
-    if vols_cc.size and vols_cc[0] < vols_cc[-1]:
-        doses, vols_cc = doses[::-1], vols_cc[::-1]
+    # garante monotonicity decrescente (DVH cumulativo)
+    vols_cc = np.maximum.accumulate(vols_cc[::-1])[::-1]
     if not len(doses) or vols_cc[0] <= 0:
         return float("nan")
     alvo = (float(v_percent) / 100.0) * float(vols_cc[0])
+    alvo = np.clip(alvo, float(np.min(vols_cc)), float(np.max(vols_cc)))
     return float(np.interp(alvo, vols_cc[::-1], doses[::-1]))
+
+
+def _Dv_from_arrays(doses, vols_cc, v_percent):
+    """Dose (Gy) que cobre v% do volume a partir de arrays já em cc."""
+    if len(doses) == 0 or len(vols_cc) == 0:
+        return float("nan")
+    vv = np.clip(np.asarray(vols_cc, float), 0.0, float(vols_cc[0]))
+    dd = np.asarray(doses, float)
+    if vv[0] < vv[-1]:
+        vv = vv[::-1]; dd = dd[::-1]
+    alvo = (float(v_percent) / 100.0) * vv[0]
+    return float(np.interp(alvo, vv[::-1], dd[::-1]))
+
+
+def _combinar_dvhs_em_cc(dvh_list):
+    """
+    Combina DVHs cumulativos em um grid comum de dose.
+    Retorna (dose_grid, vols_cc_somados, volume_total_cc).
+    Converte tudo para cm³ — útil para análise de múltiplas lesões SRS.
+    """
+    series = []
+    vtotals = []
+    for dvh in dvh_list:
+        doses, vols_raw, units = _parse_dvh_pairs(dvh)
+        vtot = obter_volume_roi_cc(dvh)
+        if units in ("CM3", "CC", "CM^3"):
+            vols_cc = np.asarray(vols_raw, float)
+            if not vtot and len(vols_cc):
+                vtot = float(vols_cc[0])
+        elif units in ("PERCENT", "RELATIVE"):
+            if not vtot:
+                raise ValueError("DVH relativo sem DVHROIVolume; não é possível converter para cm³.")
+            vols_cc = np.asarray(vols_raw, float) * float(vtot) / 100.0
+        else:
+            raise ValueError(f"Unidade de volume DVH desconhecida: {units}")
+        d = np.asarray(doses, float); v = np.asarray(vols_cc, float)
+        if np.any(np.diff(d) < 0):
+            order = np.argsort(d); d, v = d[order], v[order]
+        if v[-1] > 0:
+            d = np.append(d, d[-1] + 1e-6); v = np.append(v, 0.0)
+        if d[0] > 0:
+            d = np.insert(d, 0, 0.0); v = np.insert(v, 0, v[0])
+        series.append((d, v))
+        vtotals.append(float(vtot or 0.0))
+    dose_grid = np.unique(np.concatenate([d for d, _ in series]))
+    dose_grid.sort()
+    vols_sum = np.zeros_like(dose_grid, float)
+    for d, v in series:
+        vols_sum += np.interp(dose_grid, d, v)
+    return dose_grid, vols_sum, float(np.sum(vtotals))
 
 
 def dose_media_gy(dvh):
