@@ -1134,11 +1134,11 @@ with tabs[0]:
 
     # Preenche cidade/mês/ano automaticamente apenas se ainda não definidos
     _hoje = datetime.date.today()
-    if inst.get("cidade_data") is None:
+    if not inst.get("cidade_data"):
         inst["cidade_data"] = inst.get("cidade") or ""
-    if inst.get("mes") is None:
+    if not inst.get("mes"):
         inst["mes"] = _MESES_PT[_hoje.month - 1]
-    if inst.get("ano") is None:
+    if not inst.get("ano"):
         inst["ano"] = str(_hoje.year)
 
 
