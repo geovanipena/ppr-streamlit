@@ -541,7 +541,7 @@ if "dados" not in st.session_state:
 if "sv" not in st.session_state:
     st.session_state.sv = 0
 if "hash_salvo" not in st.session_state:
-    st.session_state.hash_salvo = ""
+    st.session_state.hash_salvo = _hash_dados(st.session_state.dados)
 if "onboarding_done" not in st.session_state:
     st.session_state.onboarding_done = False
 if "ultima_exportacao" not in st.session_state:
@@ -667,7 +667,13 @@ def tabela_editavel(chave: str, colunas: list, altura: int = None, sort_by: str 
     )
     rows = df_edit.to_dict("records")
     rows = [r for r in rows if any(str(v).strip() for v in r.values())]
-    if rows != d.get(chave):
+    # Normalize stored rows to strings for comparison so int/float values from
+    # imported JSON don't cause a spurious write (and hash change) every render.
+    stored = [
+        {k: str(v) if v is not None else "" for k, v in r.items()}
+        for r in (d.get(chave) or [])
+    ]
+    if rows != stored:
         d[chave] = rows
     return rows
 
@@ -1128,10 +1134,11 @@ with tabs[0]:
 
     # Preenche cidade/mês/ano automaticamente apenas se ainda não definidos
     _hoje = datetime.date.today()
-    inst["cidade_data"] = inst.get("cidade") or ""
-    if not inst.get("mes"):
+    if inst.get("cidade_data") is None:
+        inst["cidade_data"] = inst.get("cidade") or ""
+    if inst.get("mes") is None:
         inst["mes"] = _MESES_PT[_hoje.month - 1]
-    if not inst.get("ano"):
+    if inst.get("ano") is None:
         inst["ano"] = str(_hoje.year)
 
 
