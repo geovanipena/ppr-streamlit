@@ -567,30 +567,60 @@ def _validar_coerencia(ds_rd, ds_rs, ds_rtplan) -> tuple:
     pid_rp = _u(getattr(ds_rtplan,  "PatientID", ""))
 
     if not all([pid_rd, pid_rs, pid_rp]):
-        erros.append("PatientID ausente em um ou mais arquivos.")
+        erros.append("PatientID ausente em um ou mais arquivos (RD/RS/RTPLAN).")
     elif len({pid_rd, pid_rs, pid_rp}) > 1:
         erros.append(f"PatientID divergente: RD='{pid_rd}', RS='{pid_rs}', RTPLAN='{pid_rp}'.")
 
+    def _str_pn(pn):
+        try: return str(pn or "").replace("^", " ").strip().upper()
+        except: return ""
+    pn_rd = _str_pn(getattr(ds_rd, "PatientName", ""))
+    pn_rs = _str_pn(getattr(ds_rs, "PatientName", ""))
+    pn_rp = _str_pn(getattr(ds_rtplan, "PatientName", ""))
+    if pn_rd and pn_rs and pn_rp and len({pn_rd, pn_rs, pn_rp}) > 1:
+        avisos.append("PatientName divergente entre RD/RS/RTPLAN (pode ser apenas diferença de formatação).")
+
     rtplan_uid = _u(getattr(ds_rtplan, "SOPInstanceUID", ""))
     rd_refs = [_u(getattr(x, "ReferencedSOPInstanceUID",""))
-               for x in getattr(ds_rd, "ReferencedRTPlanSequence", [])]
+               for x in getattr(ds_rd, "ReferencedRTPlanSequence", [])
+               if getattr(x, "ReferencedSOPInstanceUID", None)]
     if not rd_refs:
         erros.append("RTDOSE não possui ReferencedRTPlanSequence.")
     elif rtplan_uid and rtplan_uid not in rd_refs:
-        erros.append("RTDOSE não referencia o RTPLAN selecionado.")
+        erros.append("RTDOSE não referencia o RTPLAN selecionado (ReferencedRTPlanSequence).")
 
     rs_uid = _u(getattr(ds_rs, "SOPInstanceUID", ""))
     rp_rs_refs = [_u(getattr(x, "ReferencedSOPInstanceUID",""))
-                  for x in getattr(ds_rtplan, "ReferencedStructureSetSequence", [])]
+                  for x in getattr(ds_rtplan, "ReferencedStructureSetSequence", [])
+                  if getattr(x, "ReferencedSOPInstanceUID", None)]
     if not rp_rs_refs:
-        erros.append("RTPLAN não referencia nenhum RTSTRUCT.")
+        erros.append("RTPLAN não referencia nenhum RTSTRUCT (ReferencedStructureSetSequence ausente).")
     elif rs_uid and rs_uid not in rp_rs_refs:
-        erros.append("RTPLAN não referencia o RTSTRUCT selecionado.")
+        erros.append("RTPLAN não referencia o RTSTRUCT selecionado (ReferencedStructureSetSequence).")
+
+    def _fo_set(ds):
+        s = set()
+        v = getattr(ds, "FrameOfReferenceUID", None)
+        if v: s.add(_u(v))
+        for it in getattr(ds, "ReferencedFrameOfReferenceSequence", []):
+            uid = getattr(it, "FrameOfReferenceUID", None)
+            if uid: s.add(_u(uid))
+        return s
+
+    fo_rd = _fo_set(ds_rd)
+    fo_rs = _fo_set(ds_rs)
+    if fo_rd and fo_rs and fo_rd.isdisjoint(fo_rs):
+        erros.append(
+            f"FrameOfReferenceUID incompatível entre RD ({', '.join(sorted(fo_rd))}) "
+            f"e RS ({', '.join(sorted(fo_rs))})."
+        )
+    elif not fo_rd or not fo_rs:
+        avisos.append("FrameOfReferenceUID ausente em RD e/ou RS (verificação de interseção ignorada).")
 
     siu = {_u(getattr(ds, "StudyInstanceUID",""))
            for ds in [ds_rd, ds_rs, ds_rtplan] if getattr(ds,"StudyInstanceUID",None)}
     if len(siu) > 1:
-        avisos.append("StudyInstanceUID divergente (normal em alguns TPS).")
+        avisos.append("StudyInstanceUID divergente (normal em alguns TPS; apenas informativo).")
 
     return len(erros) == 0, erros, avisos
 
@@ -704,11 +734,14 @@ def _processar_dicom(files: list) -> dict | None:
 
 
 def _autopreencher_cerebro(dvhs: list) -> dict:
-    """Returns cerebro dict with auto-filled values from DICOM DVHs."""
-
-    def _strip(s): return unicodedata.normalize("NFKD",s or "").encode("ASCII","ignore").decode("ASCII")
+    """
+    Phase 1 (on DICOM import): fills volume_cc + V10/V12/V14.
+    Dmean values (minus_ptv_dmean, minus_gtv_dmean) are left at 0.0
+    and filled by _preencher_cerebro_minus after indices are calculated.
+    """
     def _norm(s):
-        s = _strip(s).upper()
+        s = unicodedata.normalize("NFKD", s or "").encode("ASCII","ignore").decode("ASCII")
+        s = s.upper()
         return re.sub(r"\s+", " ", re.sub(r"[._\-]+", " ", s)).strip()
 
     def _is_brain_total(n):
@@ -719,41 +752,203 @@ def _autopreencher_cerebro(dvhs: list) -> dict:
 
     def _is_minus_ptv(n):
         return any(re.search(p,n) for p in [
-            r"\bMINUS\s*PTV\b",r"\bMENOS\s*PTV\b",r"\bBRAIN\s*PTV\b",
-            r"\bCEREBRO\s*PTV\b",r"\bEX\s*PTV\b",r"\bSEM\s*PTV\b"])
+            r"\bMINUS\s*PTV\b",r"\bMENOS\s*PTV\b",r"\bEXC\w*\s*PTV\b",
+            r"\bSEM\s*PTV\b",r"\bWITHOUT\s*PTV\b",r"\bBRAIN\s*PTV\b",
+            r"\bCEREBRO\s*PTV\b",r"\bEX\s*PTV\b"])
 
     def _is_minus_gtv(n):
         return any(re.search(p,n) for p in [
-            r"\bMINUS\s*GTV\b",r"\bMENOS\s*GTV\b",r"\bBRAIN\s*GTV\b",
-            r"\bCEREBRO\s*GTV\b",r"\bEX\s*GTV\b",r"\bSEM\s*GTV\b"])
+            r"\bMINUS\s*GTV\b",r"\bMENOS\s*GTV\b",r"\bEXC\w*\s*GTV\b",
+            r"\bSEM\s*GTV\b",r"\bWITHOUT\s*GTV\b",r"\bBRAIN\s*GTV\b",
+            r"\bCEREBRO\s*GTV\b",r"\bEX\s*GTV\b"])
 
-    brain_total = None; brain_m_ptv = None; brain_m_gtv = None
     brain_totals = []
+    brain_m_ptv = brain_m_gtv = None
 
     for d in dvhs:
         n = _norm(d["nome"])
         obj = d["dvh_obj"]
         if _is_brain_total(n) and not _is_minus_ptv(n) and not _is_minus_gtv(n):
-            brain_totals.append((obj, obter_volume_roi_cc(obj)))
+            brain_totals.append((obj, obter_volume_roi_cc(obj) or 0))
         if _is_minus_ptv(n): brain_m_ptv = obj
         if _is_minus_gtv(n): brain_m_gtv = obj
 
+    brain_total = None
     if brain_totals:
-        brain_totals.sort(key=lambda t: t[1] or 0, reverse=True)
+        brain_totals.sort(key=lambda t: t[1], reverse=True)
         brain_total = brain_totals[0][0]
 
     def _safe(f, dvh, *a):
-        try: v = f(dvh, *a); return round(v,2) if v and np.isfinite(v) else 0.0
-        except Exception: return 0.0
+        try:
+            v = f(dvh, *a)
+            return round(float(v), 2) if v and np.isfinite(v) else 0.0
+        except Exception:
+            return 0.0
 
     dvh_vx = brain_m_ptv or brain_m_gtv or brain_total
     return {
-        "volume_cc":         round(float(obter_volume_roi_cc(brain_total) or 0), 1) if brain_total else 0.0,
-        "minus_ptv_dmean":   _safe(dose_media_gy, brain_m_ptv) if brain_m_ptv else 0.0,
-        "minus_gtv_dmean":   _safe(dose_media_gy, brain_m_gtv) if brain_m_gtv else 0.0,
-        "v10_cc":            _safe(Vx_cc, dvh_vx, 10.0) if dvh_vx else 0.0,
-        "v12_cc":            _safe(Vx_cc, dvh_vx, 12.0) if dvh_vx else 0.0,
-        "v14_cc":            _safe(Vx_cc, dvh_vx, 14.0) if dvh_vx else 0.0,
+        "volume_cc":       round(float(obter_volume_roi_cc(brain_total) or 0), 1) if brain_total else 0.0,
+        "minus_ptv_dmean": 0.0,  # filled by _preencher_cerebro_minus after calc
+        "minus_gtv_dmean": 0.0,  # filled by _preencher_cerebro_minus after calc
+        "v10_cc":          _safe(Vx_cc, dvh_vx, 10.0) if dvh_vx else 0.0,
+        "v12_cc":          _safe(Vx_cc, dvh_vx, 12.0) if dvh_vx else 0.0,
+        "v14_cc":          _safe(Vx_cc, dvh_vx, 14.0) if dvh_vx else 0.0,
+    }
+
+
+def _dvh_to_cc_arrays(dvh):
+    """Returns (doses_gy, vols_cc) with monotonicity fix, or (None, None) on failure."""
+    try:
+        doses, vols, units = _parse_dvh_pairs(dvh)
+    except Exception:
+        return None, None
+    doses = np.asarray(doses, float); vols = np.asarray(vols, float)
+    dvh_type = (getattr(dvh, "DVHType", "") or "").upper()
+    if dvh_type.startswith("DIFF") or "DIFFER" in dvh_type:
+        vols = vols[::-1].cumsum()[::-1]
+    if units in ("PERCENT", "RELATIVE"):
+        vtot = obter_volume_roi_cc(dvh)
+        if not vtot or not np.isfinite(vtot) or vtot <= 0:
+            return None, None
+        vols = vols * float(vtot) / 100.0
+    elif units not in ("CM3", "CC", "CM^3"):
+        return None, None
+    if doses.size == 0 or vols.size == 0:
+        return None, None
+    if np.any(np.diff(doses) < 0):
+        idx = np.argsort(doses); doses, vols = doses[idx], vols[idx]
+    vols = np.maximum.accumulate(vols[::-1])[::-1]
+    EPS = 1e-9
+    if doses[0] > 0.0:
+        doses = np.insert(doses, 0, 0.0); vols = np.insert(vols, 0, vols[0])
+    if vols[-1] > EPS:
+        last_d = doses[-1] + max(EPS, 1e-6 * max(1.0, doses[-1]))
+        doses = np.append(doses, last_d); vols = np.append(vols, 0.0)
+    vols = np.clip(vols, 0.0, float(vols[0]) if vols.size else 0.0)
+    return doses, vols
+
+
+def _mean_from_cum_cc(doses, vols_cc) -> float:
+    """Dmean from a cumulative DVH in cc (trapz integration)."""
+    if doses is None or vols_cc is None or len(doses) == 0 or len(vols_cc) == 0:
+        return float("nan")
+    V0 = float(vols_cc[0])
+    if not np.isfinite(V0) or V0 <= 0:
+        return float("nan")
+    y = np.clip(np.asarray(vols_cc, float) / V0, 0.0, 1.0)
+    dd = np.asarray(doses, float)
+    if y[0] < y[-1]:
+        y = y[::-1]; dd = dd[::-1]
+    return float(np.trapz(y, dd))
+
+
+def _dmean_minus(brain_dvh, sub_dvhs) -> float:
+    """Dmean of (brain − sub_dvhs) via DVH subtraction; fallback to direct Dmean if available."""
+    if brain_dvh is None:
+        return float("nan")
+    Db, Vb = _dvh_to_cc_arrays(brain_dvh)
+    if Db is None:
+        return float("nan")
+    sub_list = sub_dvhs if isinstance(sub_dvhs, (list, tuple)) else [sub_dvhs]
+    sub_list = [d for d in sub_list if d is not None]
+    if not sub_list:
+        return float("nan")
+    if len(sub_list) == 1:
+        Ds, Vs = _dvh_to_cc_arrays(sub_list[0])
+        if Ds is None:
+            return float("nan")
+        grid = np.unique(np.concatenate([Db, Ds])); grid.sort()
+        Vb_i = np.interp(grid, Db, Vb)
+        Vs_i = np.interp(grid, Ds, Vs)
+    else:
+        grid, Vs_i, _ = _combinar_dvhs_em_cc(sub_list)
+        Vb_i = np.interp(grid, Db, Vb)
+    Vminus = np.maximum(0.0, Vb_i - Vs_i)
+    return _mean_from_cum_cc(grid, Vminus)
+
+
+def _preencher_cerebro_minus(dvhs: list, current_ptv: str, use_union: bool) -> dict:
+    """
+    Phase 2 (post-calc): compute Brain−PTV and Brain−GTV Dmean.
+    If explicit Brain-PTV/GTV ROIs exist, uses their Dmean directly.
+    Otherwise, subtracts PTV/GTV DVHs from the brain DVH.
+    """
+    def _norm(s):
+        s = unicodedata.normalize("NFKD", s or "").encode("ASCII","ignore").decode("ASCII")
+        return re.sub(r"\s+", " ", re.sub(r"[._\-]+", " ", s.upper())).strip()
+
+    def _is_brain_total(n):
+        bad = [r"\bBRAIN\s*STEM\b",r"\bSTEM\b",r"\bTRONCO\b",r"\bCEREBELO\b",
+               r"\bCEREBELLUM\b",r"\bEYE\b",r"\bOPTIC\b",r"\bLENS\b"]
+        if any(re.search(p,n) for p in bad): return False
+        return bool(re.search(r"\b(WHOLE\s*BRAIN|BRAIN|CEREBRO|CEREBRUM|ENCEFAL\w*)\b",n))
+
+    def _is_minus_ptv(n):
+        return any(re.search(p,n) for p in [
+            r"\bMINUS\s*PTV\b",r"\bMENOS\s*PTV\b",r"\bEXC\w*\s*PTV\b",
+            r"\bSEM\s*PTV\b",r"\bWITHOUT\s*PTV\b",r"\bBRAIN\s*PTV\b",
+            r"\bCEREBRO\s*PTV\b",r"\bEX\s*PTV\b"])
+
+    def _is_minus_gtv(n):
+        return any(re.search(p,n) for p in [
+            r"\bMINUS\s*GTV\b",r"\bMENOS\s*GTV\b",r"\bEXC\w*\s*GTV\b",
+            r"\bSEM\s*GTV\b",r"\bWITHOUT\s*GTV\b",r"\bBRAIN\s*GTV\b",
+            r"\bCEREBRO\s*GTV\b",r"\bEX\s*GTV\b"])
+
+    brain_total = brain_m_ptv = brain_m_gtv = dvh_ptv_sel = None
+    gtv_list, ptv_list = [], []
+
+    for d in dvhs:
+        nome_raw = d["nome"]
+        n = _norm(nome_raw)
+        obj = d["dvh_obj"]
+        if _is_brain_total(n) and not _is_minus_ptv(n) and not _is_minus_gtv(n):
+            v_cc = obter_volume_roi_cc(obj) or 0
+            if brain_total is None or v_cc > (obter_volume_roi_cc(brain_total) or 0):
+                brain_total = obj
+        if _is_minus_ptv(n):   brain_m_ptv = obj
+        if _is_minus_gtv(n):   brain_m_gtv = obj
+        if current_ptv and nome_raw == current_ptv:
+            dvh_ptv_sel = obj
+        elif not dvh_ptv_sel and "PTV" in n:
+            dvh_ptv_sel = obj
+        if "GTV" in n: gtv_list.append(obj)
+        if "PTV" in n: ptv_list.append(obj)
+
+    # Brain-PTV Dmean
+    if brain_m_ptv is not None:
+        dmean_m_ptv = dose_media_gy(brain_m_ptv)
+    else:
+        sub_ptv = ptv_list if use_union else ([dvh_ptv_sel] if dvh_ptv_sel else None)
+        dmean_m_ptv = _dmean_minus(brain_total, sub_ptv) if sub_ptv else float("nan")
+
+    # Brain-GTV Dmean
+    if brain_m_gtv is not None:
+        dmean_m_gtv = dose_media_gy(brain_m_gtv)
+    else:
+        if use_union:
+            sub_gtv = gtv_list if gtv_list else None
+        else:
+            sub_gtv = None
+            if current_ptv:
+                alvo_gtv = re.sub(r"PTV", "GTV", current_ptv, flags=re.I)
+                for d in dvhs:
+                    if _norm(d["nome"]) == _norm(alvo_gtv):
+                        sub_gtv = d["dvh_obj"]; break
+            if sub_gtv is None and gtv_list:
+                sub_gtv = max(gtv_list, key=lambda dvh: obter_volume_roi_cc(dvh) or 0.0)
+        dmean_m_gtv = _dmean_minus(brain_total, sub_gtv) if sub_gtv else float("nan")
+
+    def _safe_float(v):
+        try:
+            fv = float(v)
+            return round(fv, 2) if np.isfinite(fv) else 0.0
+        except Exception:
+            return 0.0
+
+    return {
+        "minus_ptv_dmean": _safe_float(dmean_m_ptv),
+        "minus_gtv_dmean": _safe_float(dmean_m_gtv),
     }
 
 
@@ -982,12 +1177,13 @@ def _init():
             "plano":       {"num_frc":1,"dose_frc":0.0,"dose_total":0.0},
             "cerebro":     {"volume_cc":0.0,"minus_ptv_dmean":0.0,"minus_gtv_dmean":0.0,
                             "v10_cc":0.0,"v12_cc":0.0,"v14_cc":0.0},
-            "dvhs":        [],
-            "ds_rd":       None, "ds_rs": None, "ds_rtplan": None,
-            "ptv_results": {},   # nome -> {params, resultados}
-            "current_ptv": None,
-            "dvh_select":  set(),
-            "dicom_ok":    False,
+            "dvhs":           [],
+            "ds_rd":          None, "ds_rs": None, "ds_rtplan": None,
+            "ptv_results":    {},   # nome -> {params, resultados}
+            "current_ptv":    None,
+            "dvh_select":     set(),
+            "dicom_ok":       False,
+            "use_union_alvos": True,
         }
     if "medicos_srs" not in st.session_state:
         st.session_state.medicos_srs = _carregar_medicos()
@@ -1246,6 +1442,11 @@ with tab_aval:
                         for e in erros: st.error(e)
                     else:
                         s["current_ptv"] = ptv_sels[0]
+                        # Phase 2: fill Brain-PTV/GTV Dmean via DVH subtraction
+                        upd = _preencher_cerebro_minus(
+                            s["dvhs"], s["current_ptv"], s["use_union_alvos"]
+                        )
+                        s["cerebro"].update(upd)
                         st.success(f"Índices calculados para {len(s['ptv_results'])} alvo(s).")
                         st.rerun()
 
@@ -1293,6 +1494,20 @@ with tab_aval:
     # ── Parâmetros do cérebro ──────────────────────────────────────────────────
     st.markdown('<div class="sec"><h3>Parâmetros – Cérebro</h3></div>', unsafe_allow_html=True)
     cb = s["cerebro"]
+
+    if s["dvhs"]:
+        use_union = st.checkbox(
+            "Usar TODOS os PTVs/GTVs para cálculo de Cérebro−alvo (Dmean)",
+            value=s["use_union_alvos"], key="cb_union_alvos",
+            help="Desmarcado: usa apenas o alvo selecionado. Marcado: combina todos os PTVs/GTVs."
+        )
+        if use_union != s["use_union_alvos"]:
+            s["use_union_alvos"] = use_union
+            if s["ptv_results"]:
+                upd = _preencher_cerebro_minus(s["dvhs"], s["current_ptv"], s["use_union_alvos"])
+                s["cerebro"].update(upd)
+                st.rerun()
+
     bc1, bc2, bc3 = st.columns(3)
     with bc1:
         cb["volume_cc"]       = st.number_input("Volume do Cérebro (cc)", min_value=0.0,
