@@ -3,9 +3,9 @@ PPR Web – Gerador de Plano de Proteção Radiológica
 Versão Streamlit  |  Física Médica / Radioterapia
 """
 import streamlit as st
-import json, io, base64, tempfile, os, hashlib, datetime
-from copy import deepcopy
+import json, io, re, base64, tempfile, os, hashlib, datetime
 from html import escape as _he
+from pypdf import PdfReader
 import pandas as pd
 
 st.set_page_config(
@@ -109,28 +109,6 @@ html, body, [class*="css"] {
     height: 100%;
     border-radius: 99px;
     transition: width 0.5s ease;
-}
-
-/* ── Alert banner ─────────────────────────────────────────────────────── */
-.alert-unsaved {
-    background: #FEF9C3;
-    border: 1px solid #FDE047;
-    border-left: 4px solid #EAB308;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 0.82rem;
-    color: #713F12;
-    font-weight: 500;
-}
-.alert-ok {
-    background: #F0FDF4;
-    border: 1px solid #86EFAC;
-    border-left: 4px solid #22C55E;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 0.82rem;
-    color: #14532D;
-    font-weight: 500;
 }
 
 /* ── Section header ───────────────────────────────────────────────────── */
@@ -290,42 +268,6 @@ html, body, [class*="css"] {
 hr {
     border-color: #E2E8F0;
     margin: 1rem 0;
-}
-
-/* ── Checklist items ──────────────────────────────────────────────────── */
-.check-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 0;
-    font-size: 0.85rem;
-    color: #374151;
-    border-bottom: 1px solid #F1F5F9;
-}
-.check-item:last-child { border-bottom: none; }
-
-/* ── Sidebar nav items ────────────────────────────────────────────────── */
-.nav-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 9px 12px;
-    border-radius: 8px;
-    font-size: 0.88rem;
-    font-weight: 500;
-    color: #CBD5E1;
-    cursor: pointer;
-    transition: all 0.15s;
-    margin-bottom: 2px;
-}
-.nav-item:hover {
-    background: rgba(255,255,255,0.1);
-    color: #fff;
-}
-.nav-item.active {
-    background: rgba(255,255,255,0.15);
-    color: #fff;
-    font-weight: 600;
 }
 
 /* ── Info/Success/Error boxes ─────────────────────────────────────────── */
@@ -785,10 +727,6 @@ def upload_pdfs(chave_pdfs: str, label: str, tipos: list = None):
 
 def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
     """Extrai registros de ASO de um PDF usando pypdf + Claude."""
-    import io, json, re, os
-    from pypdf import PdfReader
-    import anthropic
-
     reader = PdfReader(io.BytesIO(pdf_bytes))
     texto = "\n".join(page.extract_text() or "" for page in reader.pages)
 
@@ -839,11 +777,6 @@ def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
 
 def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
     """Extrai datas de realização e vencimento de cada PDF carregado usando Claude."""
-    import re as _re, json as _json, os as _os, io as _io
-    import base64 as _b64
-    from pypdf import PdfReader
-    import anthropic
-
     _chaves_nome = {
         "autorizacao_funcionamento":         "Autorização de Funcionamento",
         "levantamento_radiometrico":         "Levantamento Radiométrico",
@@ -859,8 +792,8 @@ def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
         if sec_k not in _chaves_nome:
             continue
         try:
-            pdf_bytes = _b64.b64decode(info["data"])
-            reader = PdfReader(_io.BytesIO(pdf_bytes))
+            pdf_bytes = base64.b64decode(info["data"])
+            reader = PdfReader(io.BytesIO(pdf_bytes))
             texto = "\n".join(p.extract_text() or "" for p in reader.pages)
             textos_por_secao.setdefault(sec_k, []).append(texto[:3000])
         except Exception:
@@ -869,7 +802,7 @@ def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
     if not textos_por_secao:
         return {}
 
-    api_key = st.secrets.get("ANTHROPIC_API_KEY") or _os.environ.get("ANTHROPIC_API_KEY")
+    api_key = st.secrets.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY não configurada.")
     client = _get_anthropic_client(api_key)
@@ -892,10 +825,10 @@ def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
         if not msg.content or not hasattr(msg.content[0], "text"):
             continue
         raw = msg.content[0].text.strip()
-        m = _re.search(r"\{[^}]+\}", raw, _re.DOTALL)
+        m = re.search(r"\{[^}]+\}", raw, re.DOTALL)
         if m:
             try:
-                resultado[sec_k] = _json.loads(m.group())
+                resultado[sec_k] = json.loads(m.group())
             except Exception:
                 pass
     return resultado
