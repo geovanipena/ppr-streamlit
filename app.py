@@ -5,6 +5,7 @@ Versão Streamlit  |  Física Médica / Radioterapia
 import streamlit as st
 import json, io, base64, tempfile, os, hashlib, datetime
 from copy import deepcopy
+from html import escape as _he
 import pandas as pd
 
 st.set_page_config(
@@ -718,13 +719,14 @@ def tabela_editavel(chave: str, colunas: list, altura: int = None, sort_by: str 
         df_ini,
         column_config=col_cfg,
         num_rows="dynamic",
-        width='stretch',
+        use_container_width=True,
         height=_h,
         key=f"editor_{chave}_{sv}",
     )
     rows = df_edit.to_dict("records")
     rows = [r for r in rows if any(str(v).strip() for v in r.values())]
-    d[chave] = rows
+    if rows != d.get(chave):
+        d[chave] = rows
     return rows
 
 
@@ -807,11 +809,15 @@ def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
             )
         }]
     )
+    if not msg.content or not hasattr(msg.content[0], "text"):
+        raise ValueError("A IA não retornou conteúdo de texto.")
     raw = msg.content[0].text.strip()
     # Extrai JSON mesmo se houver texto extra ao redor
     match = re.search(r"\[.*\]", raw, re.DOTALL)
     if match:
         raw = match.group(0)
+    else:
+        raise ValueError("A IA não retornou uma lista JSON válida.")
     registros = json.loads(raw)
     return [
         {
@@ -876,6 +882,8 @@ def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
                 f"Texto:\n{texto_comb}"
             )}],
         )
+        if not msg.content or not hasattr(msg.content[0], "text"):
+            continue
         raw = msg.content[0].text.strip()
         m = _re.search(r"\{[^}]+\}", raw, _re.DOTALL)
         if m:
@@ -1084,9 +1092,9 @@ if not st.session_state.onboarding_done and not d["instalacao"].get("nome"):
                 novo = importar_jsons(arqs_ob)
                 novo["_pdfs_bytes"] = {}
                 novo["_logo_bytes"] = None
-                for k in list(st.session_state.keys()):
-                    if k not in {"sv"}:
-                        del st.session_state[k]
+                for k in ("dados", "hash_salvo", "onboarding_done",
+                          "ultima_exportacao", "_pdf_gerado"):
+                    st.session_state.pop(k, None)
                 st.session_state.dados = novo
                 st.session_state.sv += 1
                 st.session_state.hash_salvo = _hash_dados(novo)
@@ -1162,13 +1170,15 @@ with tabs[0]:
         inst["subgrupo"] = b.text_input("Subgrupo", inst.get("subgrupo",""), key=f"inst_subgrupo_{sv}")
         inst["instituicao"] = st.text_input("Cabeçalho (instituição)", inst.get("instituicao",""), key=f"inst_instituicao_{sv}")
 
-    # Preenche automaticamente cidade, mês e ano do documento a partir da instalação
+    # Preenche cidade/mês/ano automaticamente apenas se ainda não definidos
     _MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
                  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     _hoje = datetime.date.today()
     inst["cidade_data"] = inst.get("cidade") or ""
-    inst["mes"]         = _MESES_PT[_hoje.month - 1]
-    inst["ano"]         = str(_hoje.year)
+    if not inst.get("mes"):
+        inst["mes"] = _MESES_PT[_hoje.month - 1]
+    if not inst.get("ano"):
+        inst["ano"] = str(_hoje.year)
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -1740,9 +1750,9 @@ with tabs[6]:
     for _row in _rows_display:
         _trs += (
             f"<tr>"
-            f"<td style='font-weight:500;'>{_row['Documento']}</td>"
-            f"<td>{_row['Realização'] or '—'}</td>"
-            f"<td>{_row['Vencimento'] or '—'}</td>"
+            f"<td style='font-weight:500;'>{_he(_row['Documento'])}</td>"
+            f"<td>{_he(_row['Realização']) or '—'}</td>"
+            f"<td>{_he(_row['Vencimento']) or '—'}</td>"
             f"<td>{_chip_html(_row['Status'])}</td>"
             f"</tr>"
         )
@@ -1801,10 +1811,10 @@ with tabs[6]:
                 _chip_cls = "chip-ok"
             _aso_trs += (
                 f"<tr>"
-                f"<td style='font-weight:500;'>{_row['IOE']}</td>"
-                f"<td>{_row['Último ASO'] or '—'}</td>"
-                f"<td>{_row['Validade'] or '—'}</td>"
-                f"<td><span class='chip {_chip_cls}'>{_s}</span></td>"
+                f"<td style='font-weight:500;'>{_he(_row['IOE'])}</td>"
+                f"<td>{_he(_row['Último ASO']) or '—'}</td>"
+                f"<td>{_he(_row['Validade']) or '—'}</td>"
+                f"<td><span class='chip {_chip_cls}'>{_he(_s)}</span></td>"
                 f"</tr>"
             )
         st.markdown(
