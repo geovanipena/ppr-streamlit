@@ -763,11 +763,18 @@ def upload_pdfs(chave_pdfs: str, label: str, tipos: list = None):
     if uploaded:
         if "_pdfs_bytes" not in d:
             d["_pdfs_bytes"] = {}
+        _max_bytes = 20 * 1024 * 1024
+        _carregados = 0
         for f in uploaded:
+            if f.size > _max_bytes:
+                st.warning(f"⚠️ **{f.name}** excede 20 MB — ignorado.")
+                continue
             b64 = base64.b64encode(f.read()).decode()
             key = f"{chave_pdfs}__{f.name}"
             d["_pdfs_bytes"][key] = {"nome": f.name, "data": b64, "chave_secao": chave_pdfs}
-        st.success(f"✅ {len(uploaded)} arquivo(s) carregado(s)")
+            _carregados += 1
+        if _carregados:
+            st.success(f"✅ {_carregados} arquivo(s) carregado(s)")
 
     if d.get("_pdfs_bytes"):
         arqs = [v["nome"] for k, v in d["_pdfs_bytes"].items()
@@ -790,7 +797,7 @@ def extrair_asos_do_pdf(pdf_bytes: bytes) -> list[dict]:
         raise ValueError(
             "ANTHROPIC_API_KEY não encontrada. Configure em Settings > Secrets no Streamlit Cloud."
         )
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_anthropic_client(api_key)
     msg = client.messages.create(
         model="claude-opus-4-7",
         max_tokens=4096,
@@ -865,7 +872,7 @@ def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
     api_key = st.secrets.get("ANTHROPIC_API_KEY") or _os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY não configurada.")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_anthropic_client(api_key)
 
     resultado: dict = {}
     for sec_k, textos in textos_por_secao.items():
@@ -894,13 +901,36 @@ def extrair_vencimentos_dos_pdfs(pdfs_bytes_map: dict) -> dict:
     return resultado
 
 
+# ── Helpers de módulo ────────────────────────────────────────────────────────
+
+_MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+             "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+
+
+def _parse_br(s: str):
+    import re as _re2
+    m = _re2.match(r"(\d{2})/(\d{2})/(\d{4})", str(s or "").strip())
+    return datetime.date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
+
+
+def _pdf_ok(chave: str, pdfs_bytes: dict, pdfs_importados: dict) -> bool:
+    return (any(v.get("chave_secao") == chave for v in pdfs_bytes.values()) or
+            bool([p for p in pdfs_importados.get(chave, []) if p]))
+
+
+@st.cache_resource
+def _get_anthropic_client(api_key: str):
+    import anthropic
+    return anthropic.Anthropic(api_key=api_key)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
 
 pct_prog, itens_prog = calcular_progresso(d)
 hash_atual = _hash_dados(d)
-dados_modificados = (hash_atual != st.session_state.hash_salvo) and bool(d["instalacao"].get("nome"))
+dados_modificados = hash_atual != st.session_state.hash_salvo
 
 with st.sidebar:
     st.markdown("""
@@ -933,10 +963,7 @@ with st.sidebar:
     _itens = itens_prog  # já calculado acima
     _pdfs_imp_sb = d.get("pdfs", {})
     _pdfs_up_sb  = d.get("_pdfs_bytes", {})
-    def _pdf_ok_sb(s):
-        return (any(v.get("chave_secao")==s for v in _pdfs_up_sb.values()) or
-                bool([p for p in _pdfs_imp_sb.get(s,[]) if p]))
-    _b_pdf = "🟢" if all(_pdf_ok_sb(s) for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra"]) else "🔴"
+    _b_pdf = "🟢" if all(_pdf_ok(s, _pdfs_up_sb, _pdfs_imp_sb) for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra"]) else "🔴"
     _tabs_sb = [
         (_status_tab(_itens[0:6]),   "Instalação"),
         (_status_tab(_itens[6:14]),  "Pessoal"),
@@ -963,10 +990,8 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
     st.markdown("---")
-    # Export
-    exportar_d = deepcopy(d)
-    exportar_d.pop("_pdfs_bytes", None)
-    exportar_d.pop("_logo_bytes", None)
+    # Export — dict comprehension evita deepcopy de MBs de base64
+    exportar_d = {k: v for k, v in d.items() if not k.startswith("_")}
     json_str = json.dumps(exportar_d, ensure_ascii=False, indent=2)
     _nome_inst = (d["instalacao"].get("nome") or "PPR").replace(" ", "-")
     _data_hoje = datetime.date.today().strftime("%d-%m-%Y")
@@ -1064,6 +1089,7 @@ if not st.session_state.onboarding_done and not d["instalacao"].get("nome"):
         </div>
         """, unsafe_allow_html=True)
         if st.button("Começar projeto novo", use_container_width=True, type="primary"):
+            st.session_state.sv += 1
             st.session_state.onboarding_done = True
             st.rerun()
 
@@ -1111,16 +1137,13 @@ if not st.session_state.onboarding_done and not d["instalacao"].get("nome"):
 # Badges por aba (reutiliza itens_prog já calculado)
 _pdfs_imp_tb = d.get("pdfs", {})
 _pdfs_up_tb  = d.get("_pdfs_bytes", {})
-def _pdf_ok_tb(s):
-    return (any(v.get("chave_secao")==s for v in _pdfs_up_tb.values()) or
-            bool([p for p in _pdfs_imp_tb.get(s,[]) if p]))
 _b = [
     _status_tab(itens_prog[0:6]),
     _status_tab(itens_prog[6:14]),
     _status_tab(itens_prog[14:17]),
     _status_tab(itens_prog[17:21]),
     _status_tab(itens_prog[21:]),
-    "🟢" if all(_pdf_ok_tb(s) for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra"]) else "🔴",
+    "🟢" if all(_pdf_ok(s, _pdfs_up_tb, _pdfs_imp_tb) for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra"]) else "🔴",
 ]
 tabs = st.tabs([
     f"🏥 Instalação {_b[0]}",
@@ -1171,8 +1194,6 @@ with tabs[0]:
         inst["instituicao"] = st.text_input("Cabeçalho (instituição)", inst.get("instituicao",""), key=f"inst_instituicao_{sv}")
 
     # Preenche cidade/mês/ano automaticamente apenas se ainda não definidos
-    _MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-                 "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     _hoje = datetime.date.today()
     inst["cidade_data"] = inst.get("cidade") or ""
     if not inst.get("mes"):
@@ -1465,14 +1486,9 @@ with tabs[5]:
     pdfs_importados = d.get("pdfs", {})
     pdfs_bytes_map_check = d.get("_pdfs_bytes", {})
     _secoes_obrig = ["autorizacao_funcionamento", "calculo_blindagem", "sevrra"]
-    def _pdf_ok(s):
-        # OK se foi feito upload OU se já existe caminho vinculado no JSON do projeto
-        uploaded = any(v.get("chave_secao") == s for v in pdfs_bytes_map_check.values())
-        vinculado = bool([p for p in pdfs_importados.get(s, []) if p])
-        return uploaded or vinculado
     avisos_tab([
         {"label": f"PDF – {s.replace('_',' ').title()}",
-         "ok": _pdf_ok(s),
+         "ok": _pdf_ok(s, pdfs_bytes_map_check, pdfs_importados),
          "critico": s in _secoes_obrig}
         for s in ["autorizacao_funcionamento","calculo_blindagem","sevrra",
                   "levantamento_radiometrico","auditoria","contrato_monitoracao"]
@@ -1607,7 +1623,7 @@ with tabs[5]:
 
     # ── Logo da Instituição ───────────────────────────────────────────────────
     sec("Logo da Instituição")
-    logo_up = st.file_uploader("Imagem do logo (PNG/JPG)", type=["png","jpg","jpeg"])
+    logo_up = st.file_uploader("Imagem do logo (PNG/JPG)", type=["png","jpg","jpeg"], key=f"up_logo_{sv}")
     if logo_up:
         d["_logo_bytes"] = base64.b64encode(logo_up.read()).decode()
         st.success("Logo carregado!")
@@ -1629,6 +1645,7 @@ with tabs[5]:
 
         if st.button("🗑️ Limpar todos os PDFs carregados"):
             d["_pdfs_bytes"] = {}
+            d["_logo_bytes"] = None
             st.rerun()
 
 
@@ -1678,11 +1695,6 @@ with tabs[6]:
 
     # ── Tabela editável de documentos ────────────────────────────────────────
     sec("Documentos – Realização e Vencimento")
-
-    def _parse_br(s: str):
-        import re as _re2
-        m = _re2.match(r"(\d{2})/(\d{2})/(\d{4})", str(s or "").strip())
-        return datetime.date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
 
     _hoje_v = datetime.date.today()
 
@@ -1742,10 +1754,14 @@ with tabs[6]:
             return f"<span class='chip chip-warn'>{s}</span>"
         return f"<span class='chip chip-ok'>{s}</span>"
 
-    _rows_display = [{"Documento": r["Documento"],
-                      "Realização": r["Realização"],
-                      "Vencimento": r["Vencimento"],
-                      "Status": _status_venc(r["Vencimento"])} for r in _rows_v]
+    # Usa _df_edit_v (pós-edição) para que os chips reflitam o que o usuário acabou de digitar
+    _rows_display = [
+        {"Documento": _docs_venc[_i][1],
+         "Realização": str(_df_edit_v.iloc[_i]["Realização"] or ""),
+         "Vencimento": str(_df_edit_v.iloc[_i]["Vencimento"] or ""),
+         "Status": _status_venc(str(_df_edit_v.iloc[_i]["Vencimento"] or ""))}
+        for _i in range(len(_docs_venc))
+    ]
     _trs = ""
     for _row in _rows_display:
         _trs += (
@@ -1912,16 +1928,8 @@ with tabs[7]:
         if st.button("📑 Gerar PDF", type="primary", use_container_width=True,
                      disabled=gerar_disabled):
             try:
-                import time
                 with st.status("⚙️ Elaborando o PPR...", expanded=True) as status:
                     st.write("📋 Verificando e organizando dados...")
-                    time.sleep(0.4)
-                    st.write("🏗️ Montando estrutura do documento...")
-                    time.sleep(0.3)
-                    st.write("📝 Redigindo seções e tabelas...")
-                    time.sleep(0.3)
-                    st.write("📎 Incorporando PDFs e imagens anexados...")
-                    time.sleep(0.3)
                     st.write("🖨️ Renderizando páginas...")
                     from ppr_pdf_web import gerar_pdf_bytes
                     pdf_bytes = gerar_pdf_bytes(d)
