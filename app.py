@@ -392,6 +392,55 @@ hr {
 .badge-yellow { background: #FEF9C3; color: #713F12; }
 .badge-red { background: #FEE2E2; color: #991B1B; }
 
+/* ── Scrollbar ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* ── Status chips ─────────────────────────────────────────────────────── */
+.chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 99px;
+    font-size: 0.73rem; font-weight: 600; white-space: nowrap;
+}
+.chip-ok      { background: #DCFCE7; color: #166534; }
+.chip-warn    { background: #FEF9C3; color: #92400E; }
+.chip-alert   { background: #FEE2E2; color: #991B1B; }
+.chip-expired { background: #7F1D1D; color: #FCA5A5; }
+.chip-none    { background: #F1F5F9; color: #94A3B8; }
+
+/* ── Styled table (Vencimentos) ───────────────────────────────────────── */
+.venc-wrap {
+    border: 1px solid #E2E8F0; border-radius: 10px;
+    overflow: hidden; margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.venc-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.venc-table th {
+    background: #1E3A5F; color: #fff; font-weight: 600;
+    padding: 9px 14px; text-align: left;
+    font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.venc-table th:first-child { border-radius: 8px 0 0 0; }
+.venc-table th:last-child  { border-radius: 0 8px 0 0; }
+.venc-table td { padding: 8px 14px; border-bottom: 1px solid #F1F5F9; color: #374151; vertical-align: middle; }
+.venc-table tr:last-child td { border-bottom: none; }
+.venc-table tr:hover td { background: #F8FAFC; }
+
+/* ── Native st.metric ─────────────────────────────────────────────────── */
+[data-testid="stMetricValue"] { font-size: 1.5rem !important; font-weight: 700 !important; }
+[data-testid="stMetricLabel"] { font-size: 0.75rem !important; font-weight: 500 !important; }
+
+/* ── Sub-tabs (nested) ────────────────────────────────────────────────── */
+.stTabs .stTabs [data-baseweb="tab-list"] {
+    background: #F1F5F9;
+    border: 1px solid #E2E8F0;
+}
+.stTabs .stTabs [aria-selected="true"] {
+    background: #334155 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -681,8 +730,10 @@ def tabela_editavel(chave: str, colunas: list, altura: int = None, sort_by: str 
 
 def bloco_resp(titulo: str, chave: str, campos: list):
     st.markdown(
-        f"<div style='font-size:0.85rem;font-weight:600;color:#1E3A5F;"
-        f"padding:4px 0 6px 0;border-bottom:1px solid #E2E8F0;margin-bottom:8px;'>"
+        f"<div style='background:#F8FAFC; border:1px solid #E2E8F0; "
+        f"border-left:3px solid #2563EB; border-radius:0 8px 8px 0; "
+        f"padding:7px 12px; margin-bottom:8px; "
+        f"font-size:0.83rem; font-weight:600; color:#1E3A5F;'>"
         f"👤 {titulo}</div>",
         unsafe_allow_html=True,
     )
@@ -691,7 +742,7 @@ def bloco_resp(titulo: str, chave: str, campos: list):
     for i, (k, lbl) in enumerate(campos):
         val[k] = cols[i].text_input(lbl, val.get(k, ""), key=f"{chave}_{k}_{sv}")
     d[chave] = val
-    st.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-bottom:16px;'></div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -888,8 +939,9 @@ with st.sidebar:
     ]
     rows = "".join(
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
-        f'padding:3px 0;font-size:0.73rem;color:#CBD5E1;">'
-        f'<span>{label}</span><span>{icon}</span></div>'
+        f'padding:4px 8px;margin-bottom:2px;border-radius:6px;font-size:0.75rem;'
+        f'color:#CBD5E1;background:rgba(255,255,255,0.05);">'
+        f'<span>{label}</span><span style="font-size:0.9rem;">{icon}</span></div>'
         for icon, label in _tabs_sb
     )
     st.markdown(f'<div style="padding:4px 0 8px;">{rows}</div>', unsafe_allow_html=True)
@@ -1667,10 +1719,39 @@ with tabs[6]:
         }
     d["vencimentos"] = venc
 
-    # Status summary
-    _status_rows = [{"Documento": r["Documento"], "Status": _status_venc(r["Vencimento"])}
-                    for r in _rows_v]
-    st.dataframe(pd.DataFrame(_status_rows), use_container_width=True, hide_index=True)
+    # Status summary — styled HTML table with chips
+    def _chip_html(status_str: str) -> str:
+        s = status_str
+        if s == "—":
+            return "<span class='chip chip-none'>—</span>"
+        if s.startswith("⛔"):
+            return f"<span class='chip chip-expired'>{s}</span>"
+        if s.startswith("🔴"):
+            return f"<span class='chip chip-alert'>{s}</span>"
+        if s.startswith("⚠️"):
+            return f"<span class='chip chip-warn'>{s}</span>"
+        return f"<span class='chip chip-ok'>{s}</span>"
+
+    _rows_display = [{"Documento": r["Documento"],
+                      "Realização": r["Realização"],
+                      "Vencimento": r["Vencimento"],
+                      "Status": _status_venc(r["Vencimento"])} for r in _rows_v]
+    _trs = ""
+    for _row in _rows_display:
+        _trs += (
+            f"<tr>"
+            f"<td style='font-weight:500;'>{_row['Documento']}</td>"
+            f"<td>{_row['Realização'] or '—'}</td>"
+            f"<td>{_row['Vencimento'] or '—'}</td>"
+            f"<td>{_chip_html(_row['Status'])}</td>"
+            f"</tr>"
+        )
+    st.markdown(
+        f"<div class='venc-wrap'><table class='venc-table'>"
+        f"<thead><tr><th>Documento</th><th>Realização</th><th>Vencimento</th><th>Status</th></tr></thead>"
+        f"<tbody>{_trs}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
 
     # ── ASOs vencendo primeiro (top 10) ──────────────────────────────────────
     sec("🩺 ASOs – 10 Próximos Vencimentos")
@@ -1705,7 +1786,33 @@ with tabs[6]:
                 "Validade": _r.get("validade",""),
                 "Status": _st,
             })
-        st.dataframe(pd.DataFrame(_aso_rows), use_container_width=True, hide_index=True)
+        _aso_trs = ""
+        for _row in _aso_rows:
+            _s = _row["Status"]
+            if _s.startswith("⛔"):
+                _chip_cls = "chip-expired"
+            elif _s.startswith("🔴"):
+                _chip_cls = "chip-alert"
+            elif _s.startswith("⚠️"):
+                _chip_cls = "chip-warn"
+            elif _s == "—":
+                _chip_cls = "chip-none"
+            else:
+                _chip_cls = "chip-ok"
+            _aso_trs += (
+                f"<tr>"
+                f"<td style='font-weight:500;'>{_row['IOE']}</td>"
+                f"<td>{_row['Último ASO'] or '—'}</td>"
+                f"<td>{_row['Validade'] or '—'}</td>"
+                f"<td><span class='chip {_chip_cls}'>{_s}</span></td>"
+                f"</tr>"
+            )
+        st.markdown(
+            f"<div class='venc-wrap'><table class='venc-table'>"
+            f"<thead><tr><th>IOE</th><th>Último ASO</th><th>Validade</th><th>Status</th></tr></thead>"
+            f"<tbody>{_aso_trs}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
 
 
 # ───────────────────────────────────────────────────────────────────────────────
