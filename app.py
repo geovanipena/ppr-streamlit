@@ -932,7 +932,7 @@ with st.sidebar:
     # Export — dict comprehension evita deepcopy de MBs de base64
     exportar_d = {k: v for k, v in d.items() if not k.startswith("_")}
     json_str = json.dumps(exportar_d, ensure_ascii=False, indent=2)
-    _nome_inst = (d["instalacao"].get("nome") or "PPR").replace(" ", "-")
+    _nome_inst = (d["instalacao"].get("nome") or "PPR").replace(" ", "_")
     _data_hoje = datetime.date.today().strftime("%d-%m-%Y")
     nome_arq   = f"PPR_{_nome_inst}_{_data_hoje}"
     _btn_label = "💾 Salvar projeto" if not dados_modificados else "💾 Salvar projeto ⚠️"
@@ -1875,7 +1875,9 @@ with tabs[7]:
                     pdf_bytes = gerar_pdf_bytes(d)
                     st.write("✅ Documento finalizado!")
                     status.update(label="✅ PPR gerado com sucesso!", state="complete", expanded=False)
-                nome_pdf = (inst_v.get("nome") or "PPR")[:30].replace(" ","_")
+                _nome_pdf_inst = (inst_v.get("nome") or "PPR")[:40].replace(" ", "_")
+                _data_pdf = datetime.date.today().strftime("%d-%m-%Y")
+                nome_pdf = f"{_nome_pdf_inst}_{_data_pdf}"
                 st.session_state["_pdf_gerado"] = {"bytes": pdf_bytes, "nome": nome_pdf}
             except ImportError:
                 st.error("❌ Módulo ppr_pdf_web não encontrado.")
