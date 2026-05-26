@@ -1897,24 +1897,6 @@ with tabs[7]:
                 use_container_width=True,
             )
 
-            st.divider()
-            sec("☁️ Salvar na Nuvem")
-            st.markdown(
-                "<div style='background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;"
-                "padding:8px 12px;font-size:0.82rem;color:#0369A1;margin-bottom:10px;'>"
-                "💡 Baixe o PDF acima e faça upload no serviço desejado, ou abra o Gmail para enviar por e-mail."
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            _gc1, _gc2, _gc3 = st.columns(3)
-            with _gc1:
-                _mailto = f"mailto:?subject=PPR+{_nome_p}&body=Segue+o+Plano+de+Proteção+Radiológica+em+anexo."
-                st.link_button("📧 Gmail / E-mail", _mailto, use_container_width=True)
-            with _gc2:
-                st.link_button("📁 Google Drive", "https://drive.google.com", use_container_width=True)
-            with _gc3:
-                st.link_button("☁️ OneDrive", "https://onedrive.live.com", use_container_width=True)
-
         st.caption(
             "Arquivos enviados na aba 'Arquivos' serão incorporados automaticamente ao documento final."
         )
