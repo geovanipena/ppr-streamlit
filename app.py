@@ -535,6 +535,11 @@ def importar_jsons(arquivos) -> dict:
     return base
 
 
+def _hash_dados(dados: dict) -> str:
+    exportar = {k: v for k, v in dados.items() if not k.startswith("_")}
+    return hashlib.md5(json.dumps(exportar, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
 # ── Session state ─────────────────────────────────────────────────────────────
 if "dados" not in st.session_state:
     st.session_state.dados = dados_padrao()
@@ -554,11 +559,6 @@ sv = st.session_state.sv
 # ═══════════════════════════════════════════════════════════════════════════════
 #  FUNÇÕES DE PROGRESSO E VALIDAÇÃO
 # ═══════════════════════════════════════════════════════════════════════════════
-
-def _hash_dados(dados: dict) -> str:
-    exportar = {k: v for k, v in dados.items() if not k.startswith("_")}
-    return hashlib.md5(json.dumps(exportar, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-
 
 def calcular_progresso(dados: dict) -> tuple:
     inst = dados.get("instalacao", {})
