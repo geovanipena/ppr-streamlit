@@ -1875,7 +1875,7 @@ with tabs[7]:
                     pdf_bytes = gerar_pdf_bytes(d)
                     st.write("✅ Documento finalizado!")
                     status.update(label="✅ PPR gerado com sucesso!", state="complete", expanded=False)
-                _nome_pdf_inst = (inst_v.get("nome") or "PPR")[:40].replace(" ", "_")
+                _nome_pdf_inst = (inst_v.get("nome") or "PPR").replace(" ", "_").replace(",", "")
                 _data_pdf = datetime.date.today().strftime("%d-%m-%Y")
                 nome_pdf = f"{_nome_pdf_inst}_{_data_pdf}"
                 st.session_state["_pdf_gerado"] = {"bytes": pdf_bytes, "nome": nome_pdf}
@@ -1892,7 +1892,7 @@ with tabs[7]:
 
             st.success("✅ PPR pronto para download!")
             st.download_button(
-                label="⬇️ Baixar PPR.pdf",
+                label="⬇️ Baixar PPR",
                 data=_pdf_b,
                 file_name=f"PPR_{_nome_p}.pdf",
                 mime="application/pdf",
