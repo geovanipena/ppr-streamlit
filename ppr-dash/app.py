@@ -767,8 +767,6 @@ def section_gerar(d: dict) -> html.Div:
                     dcc.Loading(html.Div(id="download-pdf-wrap"), type="circle", color="#3B82F6"),
                     html.Button("⬇️ Baixar JSON do Projeto", id="btn-baixar-json",
                                 className="btn-ppr btn-outline w-100 mt-2"),
-                    dcc.Download(id="dl-json"),
-                    dcc.Download(id="dl-pdf"),
                 ]),
             ], width=5),
         ]),
@@ -788,7 +786,9 @@ def section_onboarding() -> html.Div:
                 html.Div("🆕", style={"fontSize": "40px", "marginBottom": "16px"}),
                 html.H3("Novo Projeto", style={"color": "#E2E8F0", "fontWeight": "700", "marginBottom": "8px"}),
                 html.P("Comece um PPR do zero", style={"color": "#64748B", "fontSize": "13px"}),
-                html.Button("Começar", id="btn-novo-projeto", className="btn-ppr btn-blue mt-3"),
+                dcc.Link("Começar", href="/instalacao",
+                         className="btn-ppr btn-blue mt-3",
+                         style={"display": "inline-block", "textDecoration": "none"}),
             ], className="onboard-card"), width=5),
 
             dbc.Col(html.Div([
@@ -812,24 +812,24 @@ def build_sidebar(d: dict, active: str) -> html.Div:
     else: fill_color = "#EF4444"
 
     nav_items = []
-    for key, _, icon, label, _ in [
-        ("instalacao",   "instalacao",   "🏥", "Instalação",        ""),
-        ("pessoal",      "pessoal",      "👥", "Pessoal",            ""),
-        ("equipamentos", "equipamentos", "⚙️", "Equipamentos",       ""),
-        ("qualidade",    "qualidade",    "✅", "Garantia Qualidade", ""),
-        ("textos",       "textos",       "📝", "Textos",             ""),
-        ("arquivos",     "arquivos",     "🗂️", "Arquivos",           ""),
-        ("vencimentos",  "vencimentos",  "📅", "Vencimentos",        ""),
-        ("gerar",        "gerar",        "📑", "Gerar PDF",          ""),
+    for key, icon, label in [
+        ("instalacao",   "🏥", "Instalação"),
+        ("pessoal",      "👥", "Pessoal"),
+        ("equipamentos", "⚙️", "Equipamentos"),
+        ("qualidade",    "✅", "Garantia Qualidade"),
+        ("textos",       "📝", "Textos"),
+        ("arquivos",     "🗂️", "Arquivos"),
+        ("vencimentos",  "📅", "Vencimentos"),
+        ("gerar",        "📑", "Gerar PDF"),
     ]:
         is_active = key == active
         nav_items.append(
-            html.Button([
+            dcc.Link([
                 html.Span(icon, className="nav-pill-icon"),
                 html.Span(label, className="nav-pill-text"),
-            ], id=f"nav-{key}",
+            ], href=f"/{key}",
                className=f"nav-pill {'active' if is_active else ''}",
-               n_clicks=0)
+               style={"textDecoration": "none"})
         )
 
     inst_nome = d.get("instalacao", {}).get("nome", "") or "Novo Projeto"
@@ -858,21 +858,25 @@ def build_sidebar(d: dict, active: str) -> html.Div:
         html.Div(nav_items, className="sidebar-nav"),
 
         html.Div([
-            html.Button("⬇️ Salvar Projeto (JSON)", id="btn-sidebar-save",
-                        className="btn-ppr btn-outline w-100", style={"fontSize": "12px", "padding": "8px 12px"}),
-            dcc.Download(id="dl-sidebar-json"),
+            # Visual button — uses clientside JS to click the hidden static btn-sidebar-save
+            html.Button("⬇️ Salvar Projeto (JSON)", id="btn-sidebar-save-visual",
+                        className="btn-ppr btn-outline w-100", n_clicks=0,
+                        style={"fontSize": "12px", "padding": "8px 12px"}),
         ], className="sidebar-bottom"),
     ], className="ppr-sidebar")
 
 
 # ── App Layout ────────────────────────────────────────────────────────────────
 app.layout = html.Div([
+    dcc.Location(id="url", refresh=False),
     dcc.Store(id="dados", storage_type="session", data=None),
-    dcc.Store(id="nav-state", storage_type="session", data="onboarding"),
-    dcc.Store(id="pdf-bytes-store", storage_type="memory", data=None),
 
+    # Static downloads (always in DOM so callbacks can write to them)
+    dcc.Download(id="dl-sidebar-json"),
+    dcc.Download(id="dl-json"),
+    dcc.Download(id="dl-pdf"),
 
-    # Sidebar (hidden during onboarding)
+    # Sidebar
     html.Div(id="sidebar-wrap"),
 
     # Main
@@ -885,39 +889,35 @@ app.layout = html.Div([
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
 
-# Navigation
-@app.callback(
-    Output("nav-state", "data"),
-    [Input(f"nav-{k}", "n_clicks") for k in ["instalacao","pessoal","equipamentos","qualidade","textos","arquivos","vencimentos","gerar"]],
-    Input("btn-novo-projeto", "n_clicks"),
-    prevent_initial_call=True,
-)
-def navigate(*args):
-    trig = ctx.triggered_id
-    if trig == "btn-novo-projeto":
-        return "instalacao"
-    if trig and trig.startswith("nav-"):
-        return trig[4:]
-    raise PreventUpdate
-
-
-# Render page
+# Render page — URL-based routing (dcc.Link handles navigation client-side)
 @app.callback(
     Output("page-content", "children"),
     Output("sidebar-wrap", "children"),
     Output("ppr-header-wrap", "children"),
     Output("ppr-main", "style"),
-    Input("nav-state", "data"),
+    Output("dados", "data", allow_duplicate=True),
+    Input("url", "pathname"),
     State("dados", "data"),
+    prevent_initial_call="initial_duplicate",
 )
-def render_page(nav, dados):
-    d = dados if dados else dados_iniciais()
-    is_onboard = nav == "onboarding" or not dados
+def render_page(pathname, dados):
+    section = (pathname or "/").lstrip("/") or "onboarding"
+    SECTIONS = {"instalacao","pessoal","equipamentos","qualidade","textos","arquivos","vencimentos","gerar"}
+
+    is_onboard = section not in SECTIONS
 
     if is_onboard:
-        return section_onboarding(), None, None, {"marginLeft": "0"}
+        return section_onboarding(), None, None, {"marginLeft": "0"}, no_update
 
-    sidebar = build_sidebar(d, nav)
+    # Initialize dados if navigating fresh (no data yet)
+    if dados is None:
+        dados = dados_iniciais()
+        init_dados = dados
+    else:
+        init_dados = no_update
+
+    d = dados
+    sidebar = build_sidebar(d, section)
     header = html.Div([
         html.Div([
             html.Div("Plano de Proteção Radiológica", className="header-title"),
@@ -928,7 +928,7 @@ def render_page(nav, dados):
         ]),
     ], className="ppr-header")
 
-    sections = {
+    section_fns = {
         "instalacao": section_instalacao,
         "pessoal": section_pessoal,
         "equipamentos": section_equipamentos,
@@ -938,27 +938,15 @@ def render_page(nav, dados):
         "vencimentos": section_vencimentos,
         "gerar": section_gerar,
     }
-    fn = sections.get(nav, section_instalacao)
+    fn = section_fns.get(section, section_instalacao)
     content = fn(d)
-    return content, sidebar, header, {"marginLeft": "240px"}
-
-
-# Onboarding: start new project
-@app.callback(
-    Output("dados", "data", allow_duplicate=True),
-    Input("btn-novo-projeto", "n_clicks"),
-    prevent_initial_call=True,
-)
-def start_novo(n):
-    if n:
-        return dados_iniciais()
-    raise PreventUpdate
+    return content, sidebar, header, {"marginLeft": "240px"}, init_dados
 
 
 # Onboarding: load project from file
 @app.callback(
     Output("dados", "data", allow_duplicate=True),
-    Output("nav-state", "data", allow_duplicate=True),
+    Output("url", "pathname"),
     Output("msg-onboard", "children"),
     Input("upload-projeto", "contents"),
     State("upload-projeto", "filename"),
@@ -973,7 +961,7 @@ def load_projeto(contents, filename):
         loaded = json.loads(raw)
         di = dados_iniciais()
         di.update({k: v for k, v in loaded.items() if k in di})
-        return di, "instalacao", html.Div("✅ Projeto carregado com sucesso!", className="alert-success")
+        return di, "/instalacao", no_update
     except Exception as e:
         return no_update, no_update, html.Div(f"❌ Erro ao carregar: {e}", className="alert-danger")
 
@@ -1373,7 +1361,7 @@ def gerar_pdf(n, dados):
 # Download JSON from sidebar
 @app.callback(
     Output("dl-sidebar-json", "data"),
-    Input("btn-sidebar-save", "n_clicks"),
+    Input("btn-sidebar-save-visual", "n_clicks"),
     State("dados", "data"),
     prevent_initial_call=True,
 )
